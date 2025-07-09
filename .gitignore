@@ -1,0 +1,23 @@
+# Node
+node_modules/
+dist/
+.env
+.env.*
+*.log
+
+# Prisma
+backend/generated/
+backend/prisma/.env
+backend/prisma/dev.db
+
+# Build
+*.tsbuildinfo
+build/
+
+# IDE
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
