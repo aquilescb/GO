@@ -25,6 +25,7 @@ services:
       - ./backend/.env
     volumes:
       - ./backend:/app
+        /app/node_modules
     command: npm run start:dev
 
   frontend:

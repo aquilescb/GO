@@ -1,11 +1,14 @@
 import { useAssistantAI } from "./AssistantLogic";
 
+import type { Move } from "@/types/game";
+
 interface Props {
-  lastMove: { x: number; y: number } | null;
+  lastMove: Move | null;
+  stones: Move[];
 }
 
-const AssistantPanel = ({ lastMove }: Props) => {
-  const messages = useAssistantAI(lastMove);
+const AssistantPanel = ({ lastMove, stones }: Props) => {
+  const messages = useAssistantAI(lastMove, stones);
 
   return (
     <div className="bg-[#1f2937] p-4 rounded-lg w-80 border border-gray-700">

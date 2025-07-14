@@ -1,19 +1,18 @@
-import Intersection from "./Intersection";
 import { useState } from "react";
+import Intersection from "./Intersection";
 import { useBotPlayer } from "@/hooks/useBotPlayer";
+import type { Move } from "@/types/game";
 
 const BOARD_SIZE = 19;
 
-const Board = ({
-    onMove,
-  onPlayerMove,
-}: {
-  onMove: (move: { x: number; y: number }) => void;
-  onPlayerMove: (move: { x: number; y: number }) => void;
-}) => {
-  const [stones, setStones] = useState<
-    { x: number; y: number; color: "black" | "white" }[]
-  >([]);
+interface BoardProps {
+  onMove: (move: Move) => void;
+  onPlayerMove: (move: Move) => void;
+  setStones: React.Dispatch<React.SetStateAction<Move[]>>;
+}
+
+const Board = ({ onMove, onPlayerMove, setStones }: BoardProps) => {
+  const [stones, localSetStones] = useState<Move[]>([]);
   const [currentColor, setCurrentColor] = useState<"black" | "white">("black");
 
   const { getRandomMove } = useBotPlayer(BOARD_SIZE);
@@ -21,29 +20,38 @@ const Board = ({
   const handleClick = (x: number, y: number) => {
     if (stones.some((stone) => stone.x === x && stone.y === y)) return;
 
-    const newStone = { x, y, color: currentColor };
-    setStones((prev) => [...prev, newStone]);
-    onMove({ x, y });
-    onPlayerMove({ x, y }); // solo cuando juega el humano
+    const newStone: Move = { x, y, color: currentColor };
+    const updatedStones = [...stones, newStone];
+
+    localSetStones(updatedStones);
+    setStones(updatedStones);
+
+    onMove(newStone);
+
+    if (currentColor === "black") {
+      onPlayerMove(newStone); // solo responde si juega el humano
+    }
 
     const nextColor = currentColor === "black" ? "white" : "black";
     setCurrentColor(nextColor);
 
-    // Turno del bot (blanco)
     if (currentColor === "black") {
       setTimeout(() => {
-        makeBotMove(stones.concat(newStone));
+        makeBotMove(updatedStones);
       }, 500);
     }
   };
 
-  const makeBotMove = (currentStones: typeof stones) => {
+  const makeBotMove = (currentStones: Move[]) => {
     const move = getRandomMove(currentStones);
     if (!move) return;
 
-    const botStone = { ...move, color: "white" as const };
-    setStones([...currentStones, botStone]);
-    onMove(move);
+    const botStone: Move = { ...move, color: "white" };
+    const updated = [...currentStones, botStone];
+
+    localSetStones(updated);
+    setStones(updated);
+    onMove(botStone);
     setCurrentColor("black");
   };
 
