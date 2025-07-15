@@ -1,0 +1,15 @@
+/* App.css */
+body {
+    background-color: #0d1321;
+    color: white;
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+}
+
+::-webkit-scrollbar {
+    width: 6px;
+}
+::-webkit-scrollbar-thumb {
+    background: #bc9c23;
+    border-radius: 4px;
+}

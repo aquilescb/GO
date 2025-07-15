@@ -1,12 +1,8 @@
-import './App.css'
-import './index.css';
-import GamePage from "@/pages/GamePage";
+import "./index.css";
+import GamePage from "@/domains/game-go/pages/GamePage";
 
 function App() {
-
-  return (
-    <GamePage />
-  );
+  return <GamePage />;
 }
 
-export default App
+export default App;

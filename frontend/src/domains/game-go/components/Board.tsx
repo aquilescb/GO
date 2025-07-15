@@ -1,7 +1,7 @@
 import { useState } from "react";
-import Intersection from "./Intersection";
-import { useBotPlayer } from "@/hooks/useBotPlayer";
-import type { Move } from "@/types/game";
+import Intersection from "../components/Intersection";
+import { useBotPlayer } from "@/domains/game-go/hooks/useBotPlayer";
+import type { Move } from "@/domains/game-go/types/game";
 
 const BOARD_SIZE = 19;
 
@@ -16,7 +16,7 @@ const Board = ({ onMove, onPlayerMove, setStones }: BoardProps) => {
   const [currentColor, setCurrentColor] = useState<"black" | "white">("black");
 
   const { getRandomMove } = useBotPlayer(BOARD_SIZE);
-
+  
   const handleClick = (x: number, y: number) => {
     if (stones.some((stone) => stone.x === x && stone.y === y)) return;
 
@@ -56,14 +56,12 @@ const Board = ({ onMove, onPlayerMove, setStones }: BoardProps) => {
   };
 
   return (
+  <div className="bg-[#8b5e3c] p-4 rounded-lg shadow-inner">
     <div
-      className="grid"
+      className="grid gap-0"
       style={{
         gridTemplateColumns: `repeat(${BOARD_SIZE}, 32px)`,
-        gridTemplateRows: `repeat(${BOARD_SIZE}, 32px)`,
-        gap: "0px",
-        border: "4px solid #8b5e3c",
-        backgroundColor: "#9c6225",
+        gridTemplateRows: `repeat(${BOARD_SIZE}, 32px)`
       }}
     >
       {Array.from({ length: BOARD_SIZE * BOARD_SIZE }).map((_, index) => {
@@ -82,6 +80,7 @@ const Board = ({ onMove, onPlayerMove, setStones }: BoardProps) => {
         );
       })}
     </div>
+  </div>
   );
 };
 

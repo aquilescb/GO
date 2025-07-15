@@ -14,31 +14,5 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
-  backend:
-    build: ./backend
-    container_name: go_backend
-    ports:
-      - "3000:3000"
-    depends_on:
-      - postgres
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app
-        /app/node_modules
-    command: npm run start:dev
-
-  frontend:
-    build: ./frontend
-    container_name: go_frontend
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    env_file:
-      - ./frontend/.env
-    command: npm run dev
-
 volumes:
   pgdata:

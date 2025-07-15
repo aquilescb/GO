@@ -1,26 +1,50 @@
-import {IsArray,ValidateNested,IsIn,IsInt,IsOptional,ArrayMinSize,ArrayMaxSize} from "class-validator";
-import { Type } from "class-transformer";
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  ValidateNested,
+} from 'class-validator';
 
-export class MoveDto {
-    @IsInt()
-    x: number;
+class MoveDto {
+  @IsNumber()
+  x: number;
 
-    @IsInt()
-    y: number;
+  @IsNumber()
+  y: number;
 
-    @IsIn(["black", "white"])
-    color: "black" | "white";
+  @IsIn(['black', 'white'])
+  color: 'black' | 'white';
+}
+
+class PlayerProfileDto {
+  @IsIn(['beginner', 'intermediate', 'advanced'])
+  level: string;
+
+  @IsOptional()
+  @IsIn(['aggressive', 'defensive', 'balanced'])
+  style?: string;
+
+  @IsOptional()
+  @IsArray()
+  commonMistakes?: string[];
 }
 
 export class AnalyzeMoveDto {
-    @IsArray()
-    @ArrayMinSize(1)
-    board: ("black" | "white" | null)[][];
+  @ValidateNested()
+  @Type(() => MoveDto)
+  move: MoveDto;
 
-    @ValidateNested()
-    @Type(() => MoveDto)
-    lastMove: MoveDto;
+  @IsArray()
+  board: ('black' | 'white' | null)[][];
 
-    @IsArray()
-    history: MoveDto[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MoveDto)
+  lastMoves: MoveDto[];
+
+  @ValidateNested()
+  @Type(() => PlayerProfileDto)
+  playerProfile: PlayerProfileDto;
 }

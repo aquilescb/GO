@@ -1,9 +1,11 @@
-# compiled output
+# 📦 Compiled output
 /dist
-/node_modules
 /build
+/node_modules
+/generated/
+*.tsbuildinfo
 
-# Logs
+# 🔍 Logs
 logs
 *.log
 npm-debug.log*
@@ -12,15 +14,35 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
-# OS
-.DS_Store
+# ⚙️ Runtime
+pids
+*.pid
+*.seed
+*.pid.lock
 
-# Tests
+# 📁 Temp
+.temp
+.tmp
+
+# 🧪 Tests
 /coverage
 /.nyc_output
 
-# IDEs and editors
-/.idea
+# 🧠 Prisma
+prisma/generated/
+*.db
+*.sqlite
+*.sqlite-journal
+query_engine*
+query-engine*
+
+# 🌐 Environment variables
+.env
+.env.local
+.env.*.local
+
+# 💻 IDEs and editors
+.idea/
 .project
 .classpath
 .c9/
@@ -28,31 +50,20 @@ lerna-debug.log*
 .settings/
 *.sublime-workspace
 
-# IDE - VSCode
+# 🧠 VSCode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+# 🍏 macOS
+.DS_Store
 
-# temp directory
-.temp
-.tmp
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Diagnostic reports (https://nodejs.org/api/report.html)
+# 🧪 Diagnostic reports (Node.js)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
-/generated/prisma
+# ☁️ Vercel / Railway / output
+.vercel/
+.output/
+.build/
