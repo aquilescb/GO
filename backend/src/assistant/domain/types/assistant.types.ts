@@ -1,3 +1,4 @@
+import type { GroupData } from '../engine/group-analyzer';
 // Tamaño fijo inicial (puede ampliarse en el futuro)
 export type BoardSize = 19;
 
@@ -30,14 +31,34 @@ export interface AnalyzeMoveInput {
 
 // Resultado del análisis del contexto del tablero
 export interface BoardContext {
-  threats: string[]; // ej. ["group_at_risk", "lack_of_connection"]
-  opportunities: string[]; // ej. ["potential_attack", "secure_territory"]
-  patternsDetected: string[]; // ej. ["classic_shape", "overconcentration"]
-  currentSituationSummary: string; // breve resumen
+  threats: string[]; 
+  opportunities: string[]; 
+  patternsDetected: string[]; 
+  currentSituationSummary: string; 
 }
 
 // Respuesta generada por el motor
 export interface ReflectionMessage {
   message: string;
-  tags?: string[]; // opcional: etiquetas tipo ["invasion", "connection"]
+  tags?: string[]; 
+}
+
+export interface EngineEvaluation {
+  liberties: number;
+  territoryEstimate: { black: number; white: number };
+  isAtari: boolean;
+  riskLevel: 'low' | 'medium' | 'high';
+  groupsInAtari?: GroupData[]; 
+  overconcentrated: boolean;
+  connectsGroups?: boolean;
+  createsEye?: boolean;
+  threatensCapture?: boolean;
+}
+
+export interface AssistantResponse {
+  level: number;
+  levelLabel: string;
+  message: string;
+  reason: string;
+  evaluation: EngineEvaluation;
 }

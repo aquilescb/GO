@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { Move } from "@/domains/game-go/types/game";
+import type { Move, AssistantResponse } from "@/domains/game-go/types/game";
 
 export function useAssistantAI(
   lastMoves: Move[],
@@ -10,6 +10,7 @@ export function useAssistantAI(
     "¿Listo para una buena partida?",
   ]);
 
+  const [response, setResponse] = useState<AssistantResponse | null>(null);
   const lastMoveKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -18,11 +19,9 @@ export function useAssistantAI(
     const move = lastMoves[lastMoves.length - 1];
     const moveKey = `${move.x}-${move.y}`;
 
-    // Evita análisis repetidos
     if (lastMoveKeyRef.current === moveKey) return;
     lastMoveKeyRef.current = moveKey;
 
-    // Construcción del tablero
     const boardSize = 19;
     const board: ("black" | "white" | null)[][] = Array.from(
       { length: boardSize },
@@ -39,7 +38,7 @@ export function useAssistantAI(
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            move,        // 👈 agregado para cumplir con el backend
+            move,
             board,
             lastMoves,
             playerProfile: {
@@ -50,7 +49,9 @@ export function useAssistantAI(
           }),
         });
 
-        const result = await res.json();
+        const result: AssistantResponse = await res.json();
+        setResponse(result);
+
         if (result?.message) {
           setMessages((prev) => [...prev, `🧠 ${result.message}`]);
         } else {
@@ -68,5 +69,5 @@ export function useAssistantAI(
     fetchComentario();
   }, [lastMoves]);
 
-  return messages;
+  return { messages, response };
 }

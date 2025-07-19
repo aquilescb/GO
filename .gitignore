@@ -1,23 +1,25 @@
-# Node
-node_modules/
-dist/
+# ⚙️ Archivos de configuración y ambiente
 .env
-.env.*
 *.log
 
-# Prisma
-backend/generated/
-backend/prisma/.env
-backend/prisma/dev.db
+# 📦 Dependencias Node.js
+node_modules/
+**/node_modules/
 
-# Build
+# 🔧 Archivos compilados (TS/JS)
+dist/
 *.tsbuildinfo
 build/
 
-# IDE
+# 💻 Entornos de desarrollo (VSCode, IntelliJ, etc.)
 .vscode/
 .idea/
 
-# Sistema
+# ⚠️ Archivos del sistema operativo
 .DS_Store
 Thumbs.db
+
+# 🔍 Prisma
+backend/generated/
+backend/prisma/.env
+backend/prisma/dev.db
