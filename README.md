@@ -120,9 +120,5 @@ npm run dev
 Crear `.env` en la carpeta `backend/` con:
 
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/go_db
-JWT_SECRET=clave_super_secreta
-OPENAI_API_KEY=tu_openai_key
+copy .env.example .env
 ```
-
-
