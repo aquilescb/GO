@@ -1,0 +1,38 @@
+# ⚙️ Archivos de configuración y ambiente
+.env
+.env.local
+.env.*.local
+*.env
+*.log
+
+# 📦 Dependencias Node.js
+node_modules/
+**/node_modules/
+
+# 🔧 Archivos compilados (TS/JS)
+dist/
+**/dist/
+build/
+**/build/
+*.tsbuildinfo
+
+# 🗄️ Caches comunes
+.cache/
+.vite/
+
+# 💻 Entornos de desarrollo (VSCode, IntelliJ, etc.)
+.vscode/
+.idea/
+
+# ⚠️ Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+
+# 🔍 Prisma
+backend/generated/
+backend/prisma/.env
+backend/prisma/dev.db
+
+backend/pachi/
+backend/gnugo/
+backend/leelaz/

@@ -1,0 +1,70 @@
+# 📦 Compiled output
+/dist
+/build
+/node_modules
+/generated/
+*.tsbuildinfo
+
+# 🔍 Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# ⚙️ Runtime
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# 📁 Temp
+.temp
+.tmp
+
+# 🧪 Tests
+/coverage
+/.nyc_output
+
+# 🧠 Prisma
+prisma/generated/
+*.db
+*.sqlite
+*.sqlite-journal
+query_engine*
+query-engine*
+
+# 🌐 Environment variables
+.env
+.env.local
+.env.*.local
+*.env 
+
+# 💻 IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# 🧠 VSCode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# 🍏 macOS
+.DS_Store
+
+# 🧪 Diagnostic reports (Node.js)
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ☁️ Vercel / Railway / output
+.vercel/
+.output/
+.build/
