@@ -57,12 +57,26 @@ Node.js: https://nodejs.org/es
 
 ### 3. Instalacion de Motores
 
+Todos los motores deben estar ubicados dentro de la carpeta backend (al mismo nivel que src, no dentro de src).
+
+Estructura esperada:
+```bash
+backend/
+│── gnugo/
+│── leelaz/
+│── pachi/
+│── src/
+│── ...
+```
+
 #### Gnu Go
-Descargar desde: https://gnugo.baduk.org/
 
-En la carpeta backend/gnugo/ crear una subcarpeta llamada interface.
+1. Descargar desde: 
+🔗https://www.gnu.org/software/gnugo/download.html
 
-Copiar dentro de interface los siguientes archivos:
+2. Dentro de backend/gnugo/ crear una subcarpeta llamada interface.
+
+3. Copiar dentro de backend/gnugo/interface/ los siguientes archivos:
 - gnugo.exe
 - cyggcc_s-1.dll
 - cygncurses-10.dll
@@ -70,23 +84,26 @@ Copiar dentro de interface los siguientes archivos:
 - COPYING
 
 #### LeelaZero
-Descargar Leela Zero 0.17 + AutoGTP v18 desde:
-https://github.com/leela-zero/leela-zero/releases
+1. Descargar Leela Zero 0.17 + AutoGTP v18 desde:
+ https://github.com/leela-zero/leela-zero/releases
 
-Copiar todos los archivos en la carpeta:
-`backend/gnugo/leelaz`
+2. Copiar todos los archivos en la carpeta: `backend/leelaz`
 
-Asegúrate de incluir leelaz.exe, autogtp.exe, librerías .dll y el archivo weights.txt.gz.
+3. Asegúrate de incluir:
+- leelaz.exe
+- autogtp.exe
+- Todas las librerías .dll necesarias
+- La red neuronal que se puede obtener desde la página oficial o desde que. https://leela.online-go.com/networks/?C=M&O=D. Luego de descargar el archivo, renombrarlo al nombre de weights.txt.gz
 
-Leela Zero 0.17 + AutoGTP v18
-Instalar los motores:
-https://github.com/leela-zero/leela-zero/releases
+Pachi
+Descargar desde:
+🔗 https://github.com/pasky/pachi
 
-Gnu Go y Pachi descargar 
+Copiar los binarios y archivos necesarios dentro de: `backend/pachi/`
 
+### Ayuda
+Tambien se puede descargar Pachi y GnuGo para windows en este apartado:
 https://gnugo.baduk.org/
-
-Para Gnu crear una carpeta interface dentro del motor y dentro  deben estar los 4 archivos .dll y el .exe
 
 
 ### 3. Backend
