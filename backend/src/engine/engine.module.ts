@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { GameController } from './engine.controller';
+import { EngineController } from './engine.controller';
 import { KatagoService } from './katago/katago.service';
 
 @Module({
-  controllers: [GameController],
+  controllers: [EngineController],
   providers: [KatagoService],
   exports: [KatagoService],
 })

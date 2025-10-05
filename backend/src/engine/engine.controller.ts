@@ -1,30 +1,35 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
-import { KatagoService } from './katago/katago.service';
+// src/engine/katago/engine.controller.ts
+import { Body, Controller, Get, Post } from '@nestjs/common';
+import { KatagoService } from '../engine/katago/katago.service';
+import type { PlayEvalV2Response } from '../engine/engine.types';
 
 @Controller('game')
-export class GameController {
-  constructor(private readonly katago: KatagoService) {}
+export class EngineController {
+  constructor(private readonly kg: KatagoService) {}
 
-  // Iniciar partida: calienta el motor y resetea la única sesión global
   @Post('start')
-  async start() {
-    this.katago.warmup();
-    this.katago.resetSession();
-    return { ok: true, message: 'Motor iniciando' };
+  start(): { status: 'ok'; message: string } {
+    this.kg.warmup();
+    this.kg.resetSession();
+    return { status: 'ok', message: 'engine warmed & session reset' };
   }
 
-  // Jugar: el body trae { move: "B2" } en KGS (sin letra I)
-  @Post('play')
-  async play(@Body() body: { move: string }) {
-    if (!body?.move) throw new BadRequestException('Falta move.');
-    const payload = await this.katago.playGlobal(body.move);
-    return payload; // { botMove, analysis: { scoreMean, winrate, pv, ownership, candidates } }
-  }
-
-  // Apagar proceso de KataGo (opcional)
   @Post('shutdown')
-  async shutdown() {
-    this.katago.stop();
-    return { ok: true, message: 'Engine detenido' };
+  shutdown(): { status: 'ok' } {
+    this.kg.onModuleDestroy();
+    return { status: 'ok' };
+  }
+
+  @Post('play-eval')
+  async playEval(@Body() body: { move: string }): Promise<PlayEvalV2Response> {
+    const mv = (body?.move ?? '').toUpperCase();
+    return this.kg.playEvalV2(mv);
+  }
+
+  // si querés un snapshot del estado actual:
+  @Get('state')
+  state(): { moves: string[] } {
+    // muy simple: se podría exponer otro método si lo necesitás
+    return { moves: [] };
   }
 }

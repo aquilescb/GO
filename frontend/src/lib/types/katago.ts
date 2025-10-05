@@ -1,32 +1,33 @@
-export type KgVertex = string; // "A1".."T19" sin "I"; admite "PASS"
+// src/lib/types/katago.ts
+export type KgVertex = string;
+export type Color = "b" | "w";
 
-export interface CandidateMove {
+export interface CandidateBlack {
    move: KgVertex;
-   order: number; // 1..3
-   prior: number; // [0..1]
-   winrate: number; // [0..1]
-   scoreMean: number; // puntos
-}
-export interface AnalysisPayload {
-   winrate: number;
-   turnNumber: number;
-   scoreMean: number;
-   pv: KgVertex[];
-   ownership?: number[]; // -1..1, len 361
-   candidates: CandidateMove[]; // top <=3
+   prior: number;
+   winrateBlack: number; // 0..1
+   scoreMeanBlack: number; // puntos (lead negras)
+   pv: KgVertex[]; // len 5
 }
 
-export interface PlayResponse {
-   botMove: KgVertex;
-   analysis: AnalysisPayload;
-}
-
-export interface StartResponse {
-   status: "ok";
-   message: string;
-}
-
-export interface EngineError {
-   error: string;
-   message?: string;
+export interface PlayEvalV2Response {
+   MovBot: {
+      botMove: KgVertex;
+      candidates: CandidateBlack[];
+   };
+   MovUser: {
+      recommendations: CandidateBlack[];
+   };
+   metrics: {
+      bestWRPre: number;
+      wrAfterUser: number;
+      lossWinrate: number;
+      bestScorePre: number;
+      scoreAfterUser: number;
+      lossPoints: number;
+   };
+   ownership: number[]; // 361 valores [-1..1] (posición REAL)
+   state: {
+      moves: KgVertex[];
+   };
 }

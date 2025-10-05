@@ -1,93 +1,99 @@
-// src/engine/katago/katago.service.ts
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as readline from 'readline';
+import type {
+  Color,
+  SessionData,
+  KgAnalysisRaw,
+  KgMoveInfo,
+  PlayEvalV2Response,
+  CandidateBlackDTO,
+} from '../engine.types';
 
-/** ===== Ajustes básicos (rutas/valores) ===== */
+type J = Record<string, any>;
+
 const AnalysisConfig = {
   boardSize: 19,
   komi: 7.5,
   rules: 'chinese',
-  maxVisits: 180, // 150–200 va bien en CPU
-  katagoExePath: 'engines/katago/katago.exe', // ajusta si tu ruta difiere
-  networkDir: 'engines/katago/networks', // pasando el directorio, usa la red más nueva
+  maxVisits: 90,
+  katagoExePath: 'engines/katago/katago.exe',
+  networkModelPath: 'engines/katago/networks/kata1-b15c192-s1672170752-d466197061.txt.gz',
   analysisCfgPath: 'engines/katago/analysis_web.cfg',
 } as const;
 
-/** ===== Tipos expuestos para el resto de la app ===== */
-export type Color = 'b' | 'w';
+/** Con tu CFG:
+ *  - winrate = prob. de ganar del LADO AL TURNO (side-to-move)
+ *  - scoreMean = ventaja de BLANCAS (white lead)
+ */
+const clamp01 = (x: number) => (Number.isFinite(x) ? (x < 0 ? 0 : x > 1 ? 1 : x) : 0.5);
+const normalizeKGS = (s: string) => (s ?? '').trim().toUpperCase();
 
-export interface CandidateDTO {
-  move: string;
-  order: number; // 1..n
-  prior: number; // policy prior [0..1]
-  winrate: number; // [0..1]
-  scoreMean: number;
+/** WR(side-to-move) -> WR de "user" */
+function wrSTM_to_userWR(wrSTM: number | undefined, sideToMove: Color, user: Color): number {
+  const w = typeof wrSTM === 'number' ? wrSTM : 0.5;
+  return clamp01(sideToMove === user ? w : 1 - w);
 }
 
-export interface AnalysisDTO {
-  scoreMean: number;
-  winrate: number;
-  pv: string[];
-  ownership: number[]; // 19x19 = 361 valores en [-1,1]
-  candidates: CandidateDTO[];
+/** white lead -> lead de "color" */
+function lead_forColor(whiteLead: number | undefined, color: Color): number {
+  const v = typeof whiteLead === 'number' ? whiteLead : 0;
+  return color === 'w' ? v : -v;
 }
 
-export interface PlayResponseDTO {
-  botMove: string;
-  analysis: AnalysisDTO;
+/** Para tablas heredadas “WR Black / Score Black” */
+function wrSTM_to_blackWR(wrSTM: number | undefined, sideToMove: Color): number {
+  const w = typeof wrSTM === 'number' ? wrSTM : 0.5;
+  return clamp01(sideToMove === 'b' ? w : 1 - w);
 }
 
-export interface SessionData {
-  moves: Array<[Color, string]>; // [['b','D4'],['w','Q16'], ...] en KGS (sin "I")
-  nextColor: Color;
+function toUpperMove(m?: string): string {
+  return (m ?? 'PASS').toUpperCase();
+}
+function takePV5(m?: KgMoveInfo): string[] {
+  const arr = Array.isArray(m?.pv) ? m!.pv : [];
+  return arr.slice(0, 5).map(toUpperMove);
+}
+function getMoveInfos(res: KgAnalysisRaw): KgMoveInfo[] {
+  const arr = res?.rootInfo?.moveInfos ?? res?.root?.moveInfos ?? res?.moveInfos ?? [];
+  return Array.isArray(arr) ? arr : [];
 }
 
-type J = Record<string, any>;
-
-function normalizeKGS(s: string): string {
-  // Coordenadas KGS: columnas A..T sin “I”, filas 1..19. Aceptamos minusc./espacios.
-  return s.trim().toUpperCase();
+/** Ordenar por “mejor para COLOR X” (usando lead de X) */
+function sortByLeadForColor(moveInfos: KgMoveInfo[], color: Color): KgMoveInfo[] {
+  return [...moveInfos]
+    .map((mi) => ({ raw: mi, lead: lead_forColor(mi.scoreMean, color) }))
+    .sort((a, b) => b.lead - a.lead)
+    .map((s) => s.raw);
 }
 
 @Injectable()
 export class KatagoService implements OnModuleDestroy {
   private readonly log = new Logger(KatagoService.name);
-
-  /** Proceso de KataGo en modo "analysis" (JSONL) */
   private proc?: ChildProcessWithoutNullStreams;
   private rl?: readline.Interface;
-
-  /** Esperas pendientes por id (request/response) */
   private pending = new Map<string, (v: any) => void>();
   private seq = 0;
 
-  /** Sesión ÚNICA (single-user / single-session) */
+  /** Sesión en memoria */
   private globalSession: SessionData = { moves: [], nextColor: 'b' };
-
-  /** ===== Ciclo de vida del proceso ===== */
 
   ensureRunning(): void {
     if (this.proc) return;
-
     const args = [
       'analysis',
       '-config',
       AnalysisConfig.analysisCfgPath,
       '-model',
-      'engines/katago/networks/kata1-b15c192-s1672170752-d466197061.txt.gz',
+      AnalysisConfig.networkModelPath,
     ];
-
     this.log.log(`Launching KataGo: ${AnalysisConfig.katagoExePath} ${args.join(' ')}`);
     this.proc = spawn(AnalysisConfig.katagoExePath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
-
     this.proc.stderr.on('data', (d) => this.log.warn(`[katago][stderr] ${d.toString()}`));
     this.proc.on('exit', (code) => this.log.error(`KataGo exited with code ${code}`));
-
     this.rl = readline.createInterface({ input: this.proc.stdout });
     this.rl.on('line', (line) => this.onLine(line));
   }
-
   private onLine(line: string) {
     if (!line.trim()) return;
     let msg: J;
@@ -97,31 +103,25 @@ export class KatagoService implements OnModuleDestroy {
       return;
     }
     const id = msg.id as string | undefined;
-    if (!id) return;
-    const ok = this.pending.get(id);
+    const ok = id && this.pending.get(id);
     if (ok) {
       this.pending.delete(id);
       ok(msg);
     }
   }
-
   private send<T = any>(payload: J, timeoutMs = 120_000): Promise<T> {
     if (!this.proc) this.ensureRunning();
-
     return new Promise<T>((resolve, reject) => {
       const id = `t${++this.seq}`;
       const full = { id, ...payload };
-
       const to = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('ENGINE_TIMEOUT'));
       }, timeoutMs);
-
       this.pending.set(id, (v) => {
         clearTimeout(to);
         resolve(v as T);
       });
-
       this.proc!.stdin.write(JSON.stringify(full) + '\n', (err) => {
         if (err) {
           clearTimeout(to);
@@ -131,7 +131,6 @@ export class KatagoService implements OnModuleDestroy {
       });
     });
   }
-
   stop(): void {
     try {
       this.rl?.close();
@@ -143,137 +142,113 @@ export class KatagoService implements OnModuleDestroy {
     this.proc = undefined;
     this.rl = undefined;
   }
-
-  async onModuleDestroy() {
+  onModuleDestroy() {
     this.stop();
   }
 
-  /** ===== API de alto nivel para tu controller ===== */
-
-  /** Precalienta el engine (arranca el proceso si no estaba). */
   warmup(): void {
     this.ensureRunning();
   }
-
-  /** Resetea la sesión única (nuevo juego). */
   resetSession(): void {
     this.globalSession = { moves: [], nextColor: 'b' };
   }
 
-  /** Pide análisis a KataGo para la posición actual (historial). */
-  private async analyzePosition(moves: Array<['b' | 'w', string]>) {
-    const req: J = {
+  private async analyzePosition(moves: Array<[Color, string]>): Promise<KgAnalysisRaw> {
+    const req = {
       rules: AnalysisConfig.rules,
       komi: AnalysisConfig.komi,
       boardXSize: AnalysisConfig.boardSize,
       boardYSize: AnalysisConfig.boardSize,
       moves,
-      analyzeTurns: [moves.length], // analizar la posición resultante luego de la última jugada
+      analyzeTurns: [moves.length],
       maxVisits: AnalysisConfig.maxVisits,
       includeOwnership: true,
       includePolicy: true,
-      // analysisPVLen: 20, // si querés forzar PV len por request (también puede ir en cfg)
     };
-    return this.send<J>(req);
+    return this.send<KgAnalysisRaw>(req);
   }
 
-  /**
-   * Aplica la jugada del usuario en la sesión única, consulta KataGo y devuelve:
-   * {
-   *   botMove: "A1",
-   *   analysis: { scoreMean, winrate, pv[], ownership[], candidates[] }
-   * }
-   */
-  async playGlobal(move: string): Promise<PlayResponseDTO> {
-    if (!move) throw new Error('Falta move');
+  /** ===== /game/play-eval (v2) ===== */
+  async playEvalV2(userMoveRaw: string): Promise<PlayEvalV2Response> {
+    if (!userMoveRaw) throw new Error('Falta move');
 
     const s = this.globalSession;
+    const userColor: Color = s.nextColor;
 
-    // 1) Registrar jugada del USUARIO
-    const userMove = normalizeKGS(move);
-    const color: Color = s.nextColor;
-    s.moves.push([color, userMove]);
-    s.nextColor = color === 'b' ? 'w' : 'b';
+    // 1) Baseline (usuario al turno)
+    const baselineRes = await this.analyzePosition(s.moves);
+    const baseBest = sortByLeadForColor(getMoveInfos(baselineRes), userColor)[0];
+    const bestWRPre_user = wrSTM_to_userWR(baseBest?.winrate, userColor, userColor);
+    const bestScorePre_user = lead_forColor(baseBest?.scoreMean, userColor);
 
-    // 2) ANÁLISIS #1 (lado que mueve ahora = BOT). De acá sale botMove.
-    const res1 = await this.analyzePosition(s.moves);
-    const { best: bestBotCand, sorted: sortedBot } = pickBestCandidate(res1);
+    // 2) Juega usuario
+    const userMove = normalizeKGS(userMoveRaw);
+    s.moves.push([userColor, userMove]);
 
-    if (!bestBotCand) {
-      // Sin sugerencias: devolver algo mínimo
-      return {
-        botMove: 'PASS',
-        analysis: {
-          scoreMean: 0,
-          winrate: 0.5,
-          pv: [],
-          ownership: pickOwnership(res1),
-          candidates: [],
-        },
-      };
-    }
+    // 3) Tras usuario (bot al turno)
+    const afterUserRes = await this.analyzePosition(s.moves);
+    const botColor: Color = userColor === 'b' ? 'w' : 'b';
+    s.nextColor = botColor;
 
-    const botMove = (bestBotCand.move ?? 'PASS').toUpperCase();
+    const sortedForBot = sortByLeadForColor(getMoveInfos(afterUserRes), botColor);
+    const bestBot = sortedForBot[0];
+    const botMove = toUpperMove(bestBot?.move) || 'PASS';
 
-    // 3) Aplicar jugada del BOT a la sesión
-    s.moves.push([s.nextColor, botMove]);
-    s.nextColor = s.nextColor === 'b' ? 'w' : 'b';
+    // Métricas del turno (perspectiva del USUARIO) — firmadas
+    const wrAfterUser_user = wrSTM_to_userWR(bestBot?.winrate, botColor, userColor);
+    const scoreAfterUser_user = Math.abs(lead_forColor(bestBot?.scoreMean, userColor));
 
-    // 4) ANÁLISIS #2 (lado que mueve ahora = USUARIO). De acá salen PV, ownership y candidates PARA EL USUARIO.
-    const res2 = await this.analyzePosition(s.moves);
-    const { best: bestUserCand, sorted: sortedUser } = pickBestCandidate(res2);
+    // Deltas ABS
+    const lossWinrate = Math.abs(bestWRPre_user - wrAfterUser_user);
+    const lossPoints = Math.abs(bestScorePre_user - scoreAfterUser_user);
 
-    // Candidates: top-3 para el USUARIO
-    const candidates = sortedUser.slice(0, 3).map((m: any, i: number) => ({
-      move: (m.move ?? '').toUpperCase(),
-      order: i + 1,
-      prior: typeof m.prior === 'number' ? m.prior : (m.policy ?? 0),
-      winrate: typeof m.winrate === 'number' ? m.winrate : 0.5,
-      scoreMean: typeof m.scoreMean === 'number' ? m.scoreMean : 0,
+    // 4) Mueve el bot → posición REAL
+    s.moves.push([botColor, botMove]);
+    s.nextColor = userColor;
+
+    // 5) Recomendaciones del usuario (usuario al turno)
+    const nextRes = await this.analyzePosition(s.moves);
+    const sortedForUserNext = sortByLeadForColor(getMoveInfos(nextRes), userColor);
+
+    // === Candidatas del USUARIO ===
+    const movUserRecommendations: CandidateBlackDTO[] = sortedForUserNext.slice(0, 3).map((mi) => ({
+      move: toUpperMove(mi.move),
+      prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
+      winrateBlack: wrSTM_to_blackWR(mi.winrate, userColor), // 0..1 (mostralo como % en el front)
+      scoreMeanBlack: lead_forColor(mi.scoreMean, userColor), // ← AHORA: ventaja DEL USUARIO
+      pv: takePV5(mi),
     }));
 
-    // PV recomendado para el USUARIO (del mejor candidate del análisis #2)
-    const pv: string[] = Array.isArray(bestUserCand?.pv)
-      ? bestUserCand.pv.map((p: string) => p.toUpperCase())
-      : [];
+    // === Candidatas del BOT ===
+    const movBotCandidates: CandidateBlackDTO[] = sortedForBot.slice(0, 3).map((mi) => ({
+      move: toUpperMove(mi.move),
+      prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
+      winrateBlack: wrSTM_to_blackWR(mi.winrate, botColor), // 0..1 (mostralo como % en el front)
+      scoreMeanBlack: lead_forColor(mi.scoreMean, botColor), // ← AHORA: ventaja DEL BOT
+      pv: takePV5(mi),
+    }));
 
-    // Ownership del estado ACTUAL (tras mover el bot)
-    const ownership: number[] = pickOwnership(res2);
-
-    // Métricas: usamos scoreMean/winrate del mejor candidate para el USUARIO
-    const scoreMean = typeof bestUserCand?.scoreMean === 'number' ? bestUserCand.scoreMean : 0;
-    const winrate = typeof bestUserCand?.winrate === 'number' ? bestUserCand.winrate : 0.5;
+    // Ownership (posición real)
+    const ownershipFlat =
+      nextRes?.rootInfo?.ownership ??
+      nextRes?.root?.ownership ??
+      nextRes?.ownership ??
+      (Array.isArray(nextRes?.turns) ? nextRes.turns[0]?.ownership : undefined) ??
+      [];
 
     return {
-      botMove,
-      analysis: { scoreMean, winrate, pv, ownership, candidates },
+      MovBot: { botMove, candidates: movBotCandidates },
+      MovUser: { recommendations: movUserRecommendations },
+      metrics: {
+        bestWRPre: bestWRPre_user,
+        wrAfterUser: wrAfterUser_user,
+        lossWinrate,
+        bestScorePre: bestScorePre_user,
+        scoreAfterUser: scoreAfterUser_user,
+        lossPoints,
+      },
+      ownership: ownershipFlat,
+      state: { moves: s.moves.map(([, mv]) => mv) },
     };
   }
-}
-
-// Helper functions moved outside the class
-
-function pickBestCandidate(res: any): { best: any | null; sorted: any[] } {
-  const root = res?.rootInfo ?? res?.root ?? {};
-  const moveInfos = (root.moveInfos ?? res?.moveInfos ?? []) as any[];
-  if (!Array.isArray(moveInfos) || moveInfos.length === 0) {
-    return { best: null, sorted: [] };
-  }
-  const sorted = [...moveInfos].sort((a, b) => (b.scoreMean ?? 0) - (a.scoreMean ?? 0));
-  return { best: sorted[0], sorted };
-}
-
-function pickOwnership(res: any): number[] {
-  // KataGo puede ubicar ownership en distintos lugares según build/config:
-  const tryPaths = [
-    (o: any) => o?.rootInfo?.ownership,
-    (o: any) => o?.root?.ownership,
-    (o: any) => o?.ownership,
-    (o: any) => Array.isArray(o?.turns) && o.turns[0]?.ownership,
-  ];
-  for (const f of tryPaths) {
-    const v = f(res);
-    if (Array.isArray(v)) return v as number[];
-  }
-  return []; // fallback si no vino
 }

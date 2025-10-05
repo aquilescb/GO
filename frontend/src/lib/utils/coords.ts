@@ -26,9 +26,6 @@ export function truncTo(n: number, decimals: number): number {
 }
 
 // 0.405191513 -> "40.51" (dos decimales, trunc)
-export function formatPercent2(fraction: number): string {
-   return truncTo(fraction * 100, 2).toFixed(2);
-}
 
 // -1.35058767 -> "-1.350" (tres decimales, trunc)
 export function formatFixed3(n: number): string {

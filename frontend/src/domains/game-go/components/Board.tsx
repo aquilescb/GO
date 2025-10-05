@@ -1,7 +1,5 @@
 import { useMemo, useState } from "react";
 import type { Move, StoneMap } from "@/lib/types/ui";
-import OverlayCandidates from "./OverlayCandidates";
-import type { CandidateMove } from "@/lib/types/katago";
 import { xyToCoord } from "@/lib/utils/coords";
 
 interface Props {
@@ -10,7 +8,6 @@ interface Props {
    botThinking?: boolean;
    showCoords?: boolean;
    lastBotMove?: string;
-   candidates?: CandidateMove[]; // top-3
 }
 
 const SIZE = 19;
@@ -26,7 +23,6 @@ export default function Board({
    botThinking,
    showCoords = true,
    lastBotMove,
-   candidates,
 }: Props) {
    const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
 
@@ -42,7 +38,7 @@ export default function Board({
    const handleClick = (x: number, y: number) => {
       if (botThinking) return;
       if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return;
-      // 👇 NO permitir poner si ya hay piedra (tuya o del bot)
+      // NO permitir poner si ya hay piedra (tuya o del bot)
       if (stonesMap[`${x},${y}`]) return;
       onPlay(xyToCoord(x, y));
    };
@@ -184,11 +180,6 @@ export default function Board({
                      </g>
                   );
                })
-            )}
-
-            {/* Candidatas (top-3) */}
-            {candidates && (
-               <OverlayCandidates candidates={candidates} cell={cell} />
             )}
          </svg>
       </div>

@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Move, StoneMap } from "@/lib/types/ui";
+import SketchCanvas from "./SketchCanvas";
 
 const SIZE = 19;
 const LETTERS = "ABCDEFGHJKLMNOPQRST";
 
 interface Props {
-   /** Piedras reales de la partida (se sincroniza automáticamente) */
    baseMoves: Move[];
-   /** Color inicial para explorar */
    startColor?: "black" | "white";
 }
 
@@ -17,14 +16,13 @@ export default function PracticeBoard({
 }: Props) {
    const [hypoMoves, setHypoMoves] = useState<Move[]>([]);
    const [turn, setTurn] = useState<"black" | "white">(startColor);
+   const [showSketch, setShowSketch] = useState(true);
 
-   // Cuando cambia el estado real de la partida, reseteamos la exploración
    useEffect(() => {
       setHypoMoves([]);
       setTurn(startColor);
    }, [baseMoves, startColor]);
 
-   // Mapa de ocupación con base + hipotéticas
    const stonesMap: StoneMap = useMemo(() => {
       const o: StoneMap = {};
       for (const m of baseMoves) o[`${m.x},${m.y}`] = m.color;
@@ -36,7 +34,6 @@ export default function PracticeBoard({
    const cell = gridSize / (SIZE - 1);
 
    const handlePlace = (x: number, y: number) => {
-      // ❌ No permitir sobre-escribir (base o hypo)
       if (stonesMap[`${x},${y}`]) return;
       const move: Move = { x, y, color: turn };
       setHypoMoves((prev) => [...prev, move]);
@@ -56,33 +53,38 @@ export default function PracticeBoard({
    const swapTurn = () => setTurn((t) => (t === "black" ? "white" : "black"));
 
    return (
-      <div className="space-y-2">
-         <div className="flex items-center justify-between text-xs">
+      <div className="space-y-3">
+         <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="opacity-80">
                Turno: {turn === "black" ? "Negras" : "Blancas"}
             </span>
-            <div className="flex gap-2">
-               <button
-                  onClick={swapTurn}
-                  className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
-               >
-                  Cambiar turno
-               </button>
-               <button
-                  onClick={undo}
-                  className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
-               >
-                  Deshacer
-               </button>
-               <button
-                  onClick={clear}
-                  className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
-               >
-                  Limpiar
-               </button>
-            </div>
+            <button
+               onClick={swapTurn}
+               className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
+            >
+               Cambiar turno
+            </button>
+            <button
+               onClick={undo}
+               className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
+            >
+               Deshacer
+            </button>
+            <button
+               onClick={clear}
+               className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
+            >
+               Limpiar
+            </button>
+            <button
+               onClick={() => setShowSketch((v) => !v)}
+               className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a]"
+            >
+               {showSketch ? "Ocultar lápiz" : "Mostrar lápiz"}
+            </button>
          </div>
 
+         {/* Tablero */}
          <svg
             viewBox={`0 0 ${gridSize} ${gridSize}`}
             className="w-full aspect-square rounded shadow"
@@ -149,17 +151,14 @@ export default function PracticeBoard({
 
                   return (
                      <g key={key} className="cursor-pointer">
-                        {/* Área de click SIEMPRE presente */}
                         <circle
                            cx={cx}
                            cy={cy}
                            r={cell * 0.45}
                            fill="transparent"
-                           // garantizamos que capture eventos aunque esté vacío
                            style={{ pointerEvents: "all" }}
                            onClick={() => handlePlace(x, y)}
                         />
-                        {/* Piedra si existe (base o hypo) */}
                         {color && (
                            <circle
                               cx={cx}
@@ -175,6 +174,9 @@ export default function PracticeBoard({
                })
             )}
          </svg>
+
+         {/* Canvas de dibujo (fluido) */}
+         {showSketch && <SketchCanvas ratio={1} />}
       </div>
    );
 }

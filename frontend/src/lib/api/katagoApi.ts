@@ -1,4 +1,5 @@
-import type { PlayResponse, StartResponse } from "@/lib/types/katago";
+// src/lib/api/katagoApi.ts
+import type { PlayEvalV2Response } from "@/lib/types/katago";
 
 const BASE =
    (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
@@ -11,48 +12,36 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       ...init,
    });
-
+   // eslint-disable-next-line @typescript-eslint/no-explicit-any
    let data: any = null;
    try {
       data = await res.json();
    } catch {
-      /* ignore */
+      /* empty */
    }
-
    if (!res.ok) {
-      const msg = data?.error || data?.message || `HTTP ${res.status}`;
-      throw new Error(String(msg));
+      throw new Error(
+         String(data?.error || data?.message || `HTTP ${res.status}`)
+      );
    }
-
    return data as T;
 }
 
-/**
- * Inicia partida en el backend (POST /game/start).
- */
-export function startGame(): Promise<StartResponse> {
-   return http<StartResponse>("/game/start", {
+export function startGame() {
+   return http<{ status: "ok"; message: string }>("/game/start", {
       method: "POST",
-      body: JSON.stringify({}),
+      body: "{}",
    });
 }
-
-/**
- * Envía un movimiento del jugador (ej: "B2") y recibe respuesta del bot.
- */
-export function playMove(move: string): Promise<PlayResponse> {
-   return http<PlayResponse>("/game/play", {
+export function shutdownEngine() {
+   return http<{ status: "ok" }>("/game/shutdown", {
+      method: "POST",
+      body: "{}",
+   });
+}
+export function playEval(move: string): Promise<PlayEvalV2Response> {
+   return http<PlayEvalV2Response>("/game/play-eval", {
       method: "POST",
       body: JSON.stringify({ move }),
-   });
-}
-
-/**
- * Apaga el motor (POST /game/shutdown).
- */
-export function shutdownEngine(): Promise<void> {
-   return http<void>("/game/shutdown", {
-      method: "POST",
-      body: JSON.stringify({}),
    });
 }

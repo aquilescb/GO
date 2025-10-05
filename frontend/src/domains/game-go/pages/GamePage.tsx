@@ -1,89 +1,111 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import Board from "@/domains/game-go/components/Board";
-import OwnershipMap from "@/domains/game-go/components/OverlayOwnership";
-import type { Move, StoneMap } from "@/lib/types/ui";
-import type { CandidateMove, PlayResponse } from "@/lib/types/katago";
-import { coordToXY } from "@/lib/utils/coords";
-import { playMove, shutdownEngine } from "@/lib/api/katagoApi";
+// src/domains/game-go/pages/GamePage.tsx
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
+import Board from "@/domains/game-go/components/Board";
+import OverlayOwnership from "@/domains/game-go/components/OverlayOwnership";
+import MoveStrip from "@/domains/game-go/components/MoveStrip";
 import PracticeBoard from "@/domains/game-go/components/PracticeBoard";
-import { formatPercent2, formatFixed3 } from "@/lib/utils/coords";
+import TagsSelect from "@/domains/game-go/components/TagsSelect";
+
+import { playEval, shutdownEngine, startGame } from "@/lib/api/katagoApi";
+import { coordToXY, formatFixed3 } from "@/lib/utils/coords";
+
+import type { Move } from "@/lib/types/ui";
+import type { PlayEvalV2Response } from "@/lib/types/katago";
 
 export default function GamePage() {
    const navigate = useNavigate();
 
    const [moves, setMoves] = useState<Move[]>([]);
    const [botThinking, setBotThinking] = useState(false);
-   const [lastBotMove, setLastBotMove] = useState<string | undefined>(
-      undefined
-   );
+   const [lastBotMove, setLastBotMove] = useState<string>();
+
+   const [metrics, setMetrics] = useState<PlayEvalV2Response["metrics"]>();
+   const [movBot, setMovBot] = useState<PlayEvalV2Response["MovBot"]>();
+   const [movUser, setMovUser] = useState<PlayEvalV2Response["MovUser"]>();
+   const [stateMoves, setStateMoves] = useState<string[]>([]);
    const [ownership, setOwnership] = useState<number[] | undefined>(undefined);
-   const [candidates, setCandidates] = useState<CandidateMove[] | undefined>(
-      undefined
-   );
-   const [analysis, setAnalysis] = useState<{
-      scoreMean: number;
-      winrate: number;
-   } | null>(null);
-   const [error, setError] = useState<string | null>(null);
-   const [moveHistory, setMoveHistory] = useState<
+
+   const [error, setError] = useState<string>();
+   const [tags, setTags] = useState<string[]>([]);
+   const [history, setHistory] = useState<
       { move: string; by: "player" | "bot" }[]
    >([]);
-
-   const rightPanelRef = useRef<HTMLDivElement | null>(null);
-
-   const stones: StoneMap = useMemo(() => {
-      const o: StoneMap = {};
-      for (const m of moves) o[`${m.x},${m.y}`] = m.color;
-      return o;
-   }, [moves]);
+   const rightRef = useRef<HTMLDivElement>(null);
 
    useEffect(() => {
-      const el = rightPanelRef.current;
-      if (!el) return;
-      el.scrollTop = el.scrollHeight;
-   }, [moveHistory]);
+      if (rightRef.current)
+         rightRef.current.scrollTop = rightRef.current.scrollHeight;
+   }, [history]);
 
-   const handlePlay = async (coord: string) => {
-      if (botThinking) return;
+   const [engineReady, setEngineReady] = useState(false);
+
+   useEffect(() => {
+      (async () => {
+         try {
+            await startGame();
+            setMoves([]);
+            setMetrics(undefined);
+            setMovBot(undefined);
+            setMovUser(undefined);
+            setStateMoves([]);
+            setOwnership(undefined);
+            setHistory([]);
+            setError(undefined);
+            setLastBotMove(undefined);
+            setEngineReady(true);
+         } catch (e: any) {
+            setError(
+               `No pude iniciar el engine: ${e?.message ?? "desconocido"}`
+            );
+            setEngineReady(false);
+         }
+      })();
+   }, []);
+
+   async function handlePlay(coord: string) {
+      if (!engineReady || botThinking) return;
       setBotThinking(true);
-      setError(null);
+      setError(undefined);
 
       const playerMove: Move = { ...coordToXY(coord), color: "black" };
-      setMoves((prev) => [...prev, playerMove]);
-      setMoveHistory((p) => [...p, { move: coord, by: "player" }]);
+      setMoves((m) => [...m, playerMove]);
+      setHistory((h) => [...h, { move: coord, by: "player" }]);
 
       try {
-         const res: PlayResponse = await playMove(coord);
-         const botMove = res.botMove;
+         const res = await playEval(coord);
+
+         const botMove = res.MovBot.botMove;
          setLastBotMove(botMove);
          const botMoveXY: Move = { ...coordToXY(botMove), color: "white" };
-         setMoves((prev) => [...prev, botMoveXY]);
-         setMoveHistory((p) => [...p, { move: botMove, by: "bot" }]);
+         setMoves((m) => [...m, botMoveXY]);
+         setHistory((h) => [...h, { move: botMove, by: "bot" }]);
 
-         setOwnership(res.analysis.ownership);
-         setCandidates(res.analysis.candidates);
-         setAnalysis({
-            scoreMean: res.analysis.scoreMean,
-            winrate: res.analysis.winrate,
-         });
+         setMetrics(res.metrics);
+         setMovBot(res.MovBot);
+         setMovUser(res.MovUser);
+         setStateMoves(res.state.moves);
+         setOwnership(res.ownership);
+         // 👉 si querés verlo en consola sin formato:
+         // console.log("METRICS DEBUG:", res.metrics.debug);
       } catch (e: any) {
-         setMoves((prev) => prev.slice(0, -1));
-         setMoveHistory((p) => p.slice(0, -1));
-         setError(e?.message || "Error jugando la jugada");
+         setMoves((m) => m.slice(0, -1));
+         setHistory((h) => h.slice(0, -1));
+         setError(`Error al jugar: ${e?.message ?? "desconocido"}`);
+         console.error("play-eval error:", e);
       } finally {
          setBotThinking(false);
       }
-   };
-
+   }
    const handlePass = async () => {
       await handlePlay("PASS");
    };
 
    return (
       <div className="min-h-screen w-full bg-[#0f2433] text-white">
-         <header className="sticky top-0 z-20 border-b border-[#2a3b48] bg-[#0f2433cc] backdrop-blur px-2">
-            <div className="max-w-[1500px] mx-auto h-14 flex items-center justify-between gap-3">
+         <header className="sticky top-0 z-20 border-b border-[#2a3b48] bg-[#0f2433cc] backdrop-blur px-3">
+            <div className="max-w-[1500px] mx-auto h-14 flex items-center justify-between">
                <h1 className="text-lg sm:text-xl font-semibold">
                   KataGo — Game
                </h1>
@@ -101,114 +123,275 @@ export default function GamePage() {
             </div>
          </header>
 
-         <main className="max-w-[1500px] mx-auto px-2 py-2 grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_300px] gap-3">
-            {/* Izquierda: Ownership */}
+         <main className="max-w-[1500px] mx-auto px-3 py-3 grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_340px] gap-3">
+            {/* IZQUIERDA */}
             <aside className="space-y-3 lg:sticky lg:top-[64px] lg:self-start">
                <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
                   <h3 className="font-semibold mb-2 text-[#f0c23b]">
-                     Ownership
+                     Mapa de Influencia
                   </h3>
-                  <OwnershipMap ownership={ownership} size={280} />
+                  <OverlayOwnership ownership={ownership} size={280} />
+               </div>
+               <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
+                  <TagsSelect value={tags} onChange={setTags} />
                </div>
             </aside>
 
-            {/* Centro: Tablero principal + panel inferior */}
+            {/* CENTRO */}
             <section className="flex flex-col items-center gap-4">
                <Board
                   moves={moves}
-                  onPlay={handlePlay}
+                  onPlay={engineReady && !botThinking ? handlePlay : () => {}}
                   botThinking={botThinking}
                   lastBotMove={lastBotMove}
-                  candidates={candidates}
                />
 
-               {/* Panel inferior */}
                <div className="w-full space-y-3">
-                  {/* Score & Winrate sin redondeo (trunc) */}
-                  {analysis && (
-                     <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-3 flex gap-4 justify-center text-sm">
-                        <span>
-                           <b>Winrate:</b> {formatPercent2(analysis.winrate)}%
-                        </span>
-                        <span>
-                           <b>ScoreMean:</b> {formatFixed3(analysis.scoreMean)}
-                        </span>
+                  {/* METRICS */}
+                  {metrics && (
+                     <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
+                        <h4 className="font-semibold mb-3 text-[#f0c23b]">
+                           Datos del KataGo
+                        </h4>
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-3 text-sm">
+                           <MetricBlock
+                              title="Delta Puntos"
+                              value={formatFixed3(metrics.lossPoints)}
+                              ok={metrics.lossPoints <= 0.15}
+                              desc={`PV ${formatFixed3(
+                                 metrics.scoreAfterUser
+                              )} · Usuario ${formatFixed3(
+                                 metrics.bestScorePre
+                              )}`}
+                           />
+                           <MetricBlock
+                              title="Delta Winrate (pp)"
+                              value={
+                                 (metrics.lossWinrate * 100).toFixed(2) + "%"
+                              }
+                              ok={metrics.lossWinrate <= 0.3}
+                              desc={`PV ${(metrics.bestWRPre * 100).toFixed(
+                                 2
+                              )}% · Usuario ${(
+                                 metrics.wrAfterUser * 100
+                              ).toFixed(2)}%`}
+                           />
+                        </div>
                      </div>
                   )}
 
-                  {/* Candidatas */}
-                  {candidates && candidates.length > 0 && (
-                     <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-3">
-                        <h4 className="font-medium mb-2">Candidatas (top-3)</h4>
-                        <ul className="text-sm space-y-1">
-                           {candidates.map((c) => (
-                              <li key={c.order}>
-                                 #{c.order} {c.move} · Prior:{" "}
-                                 {formatPercent2(c.prior)}% · Winrate{" "}
-                                 {formatPercent2(c.winrate)}% · Puntos:{" "}
-                                 {formatFixed3(c.scoreMean)}
-                              </li>
-                           ))}
-                        </ul>
-                     </div>
+                  {/* BOT */}
+                  {movBot && (
+                     <Block title="Datos del Movimiento del KataGo (Bot)">
+                        <MiniGrid
+                           list={[
+                              ["Bot Best Move", movBot.botMove],
+                              [
+                                 "Winrate",
+                                 movBot.candidates[0]
+                                    ? `${(
+                                         movBot.candidates[0].winrateBlack * 100
+                                      ).toFixed(2)}%`
+                                    : "—",
+                              ],
+                              [
+                                 "Score",
+                                 movBot.candidates[0]
+                                    ? formatFixed3(
+                                         movBot.candidates[0].scoreMeanBlack
+                                      )
+                                    : "—",
+                              ],
+                           ]}
+                        />
+                        <PV
+                           label="PV (Best)"
+                           pv={movBot.candidates[0]?.pv ?? []}
+                        />
+                        <CandidatesTable
+                           rows={movBot.candidates}
+                           title="Candidatas del Bot (top-3)"
+                        />
+                     </Block>
+                  )}
+
+                  {/* USUARIO */}
+                  {movUser && (
+                     <Block title="Consejos para el Usuario">
+                        <MiniGrid
+                           list={[
+                              [
+                                 "Sugerida",
+                                 movUser.recommendations[0]?.move ?? "—",
+                              ],
+                              [
+                                 "Winrate",
+                                 movUser.recommendations[0]
+                                    ? `${(
+                                         movUser.recommendations[0]
+                                            .winrateBlack * 100
+                                      ).toFixed(2)}%`
+                                    : "—",
+                              ],
+                              [
+                                 "Score",
+                                 movUser.recommendations[0]
+                                    ? formatFixed3(
+                                         movUser.recommendations[0]
+                                            .scoreMeanBlack
+                                      )
+                                    : "—",
+                              ],
+                           ]}
+                        />
+                        <PV
+                           label="PV (del best usuario)"
+                           pv={movUser.recommendations[0]?.pv ?? []}
+                        />
+                        <CandidatesTable
+                           rows={movUser.recommendations}
+                           title="Recomendaciones para el Usuario (top-3)"
+                        />
+                     </Block>
                   )}
 
                   {error && <p className="text-sm text-red-400">{error}</p>}
-
-                  {/* Movimientos */}
-                  <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
-                     <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-[#f0c23b] font-semibold">
-                           Movimientos
-                        </h3>
-                        <button
-                           onClick={handlePass}
-                           disabled={botThinking}
-                           className="bg-[#2a3b48] hover:bg-[#34485a] text-white text-xs font-medium px-3 py-1.5 rounded-lg disabled:opacity-60"
-                        >
-                           PASS
-                        </button>
-                     </div>
-                     <div
-                        ref={rightPanelRef}
-                        className="max-h-[200px] overflow-y-auto pr-1 rounded-md border border-[#2a3b48] bg-[#203142]"
-                     >
-                        <ol className="text-sm divide-y divide-[#2a3b48]">
-                           {moveHistory.map((m, i) => (
-                              <li
-                                 key={i}
-                                 className="flex items-center justify-between px-3 py-2"
-                              >
-                                 <span className="text-gray-300">#{i + 1}</span>
-                                 <span
-                                    className={
-                                       m.by === "player"
-                                          ? "text-blue-300"
-                                          : "text-red-300"
-                                    }
-                                 >
-                                    {m.by === "player" ? "🧑" : "🤖"}{" "}
-                                    {m.move.toUpperCase()}
-                                 </span>
-                              </li>
-                           ))}
-                        </ol>
-                     </div>
-                  </div>
                </div>
             </section>
 
-            {/* Derecha: tablero libre ligado a la partida */}
-            <aside className="space-y-3 lg:sticky lg:top-[64px] lg:self-start">
+            {/* DERECHA */}
+            <aside
+               className="space-y-3 lg:sticky lg:top-[64px] lg:self-start"
+               ref={rightRef}
+            >
+               <MoveStrip history={history} />
                <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
                   <h3 className="font-semibold mb-2 text-[#f0c23b]">
                      Tablero libre
                   </h3>
-                  {/* Inicia con las piedras actuales; por defecto explora con blancas primero */}
+                  <div className="mb-2">
+                     <button
+                        onClick={handlePass}
+                        disabled={botThinking}
+                        className="bg-[#2a3b48] hover:bg-[#34485a] text-white text-xs font-medium px-3 py-1.5 rounded-lg disabled:opacity-60"
+                     >
+                        PASS
+                     </button>
+                  </div>
                   <PracticeBoard baseMoves={moves} startColor="white" />
                </div>
             </aside>
          </main>
+      </div>
+   );
+}
+
+/* ========= UI helpers ========= */
+
+function MetricBlock({
+   title,
+   value,
+   ok,
+   desc,
+}: {
+   title: string;
+   value: string;
+   ok?: boolean;
+   desc: string;
+}) {
+   return (
+      <div className="rounded-md bg-[#203142] p-2">
+         <div className="opacity-80">{title}</div>
+         <div className={`text-lg ${ok ? "text-green-300" : "text-red-300"}`}>
+            {value}
+         </div>
+         <div className="text-xs opacity-70">{desc}</div>
+      </div>
+   );
+}
+function Block({
+   title,
+   children,
+}: {
+   title: string;
+   children: React.ReactNode;
+}) {
+   return (
+      <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
+         <h4 className="font-semibold mb-3 text-[#f0c23b]">{title}</h4>
+         {children}
+      </div>
+   );
+}
+function MiniGrid({ list }: { list: [string, string][] }) {
+   return (
+      <div className="grid sm:grid-cols-3 gap-3 text-sm mb-3">
+         {list.map(([label, val]) => (
+            <div key={label} className="rounded-md bg-[#203142] p-2">
+               <div className="opacity-80">{label}</div>
+               <div className="text-lg">{val}</div>
+            </div>
+         ))}
+      </div>
+   );
+}
+function PV({ label, pv }: { label: string; pv: string[] }) {
+   return (
+      <div className="rounded-md bg-[#203142] p-2 mb-3">
+         <div className="opacity-80 mb-1">{label}</div>
+         <div className="text-sm">{pv.join(" → ") || "—"}</div>
+      </div>
+   );
+}
+function CandidatesTable({
+   rows,
+   title,
+}: {
+   rows: {
+      move: string;
+      prior: number;
+      winrateBlack: number;
+      scoreMeanBlack: number;
+      pv: string[];
+   }[];
+   title: string;
+}) {
+   return (
+      <div className="rounded-md bg-[#203142] p-2">
+         <div className="opacity-80 mb-2 text-sm">{title}</div>
+         <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+               <thead className="text-left opacity-80">
+                  <tr>
+                     <th className="py-1 pr-2">#</th>
+                     <th className="py-1 pr-2">Move</th>
+                     <th className="py-1 pr-2">Prior</th>
+                     <th className="py-1 pr-2">WR</th>
+                     <th className="py-1 pr-2">Score</th>
+                     <th className="py-1 pr-2">PV</th>
+                  </tr>
+               </thead>
+               <tbody>
+                  {rows.map((r, i) => (
+                     <tr
+                        key={`${r.move}-${i}`}
+                        className="border-t border-[#2a3b48]"
+                     >
+                        <td className="py-1 pr-2">{i + 1}</td>
+                        <td className="py-1 pr-2 font-semibold">{r.move}</td>
+                        <td className="py-1 pr-2">{formatFixed3(r.prior)}</td>
+                        <td className="py-1 pr-2">
+                           {(r.winrateBlack * 100).toFixed(2)}%
+                        </td>
+                        <td className="py-1 pr-2">
+                           {formatFixed3(r.scoreMeanBlack)}
+                        </td>
+                        <td className="py-1 pr-2">{r.pv.join(" → ")}</td>
+                     </tr>
+                  ))}
+               </tbody>
+            </table>
+         </div>
       </div>
    );
 }

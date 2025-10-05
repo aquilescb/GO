@@ -8,7 +8,7 @@ type Props = {
 
 const LETTERS = "ABCDEFGHJKLMNOPQRST";
 
-export default function OwnershipMap({
+export default function OverlayOwnership({
    ownership,
    size = 300,
    boardSize = 19,
@@ -21,9 +21,8 @@ export default function OwnershipMap({
       );
    }
 
-   // padding para etiquetas
-   const PAD_TOP = 18; // px
-   const PAD_LEFT = 22; // px
+   const PAD_TOP = 18;
+   const PAD_LEFT = 22;
    const innerW = size - PAD_LEFT - 8;
    const innerH = size - PAD_TOP - 8;
    const cellX = innerW / (boardSize - 1);
@@ -65,7 +64,7 @@ export default function OwnershipMap({
             );
          })}
 
-         {/* Etiquetas KGS */}
+         {/* Etiquetas */}
          {[...Array(boardSize)].map((_, i) => (
             <text
                key={`L-${i}`}
@@ -91,10 +90,10 @@ export default function OwnershipMap({
             </text>
          ))}
 
-         {/* Círculos de ownership */}
+         {/* Círculos: azul (v>0) blancas; rojo (v<0) negras, como tu versión original */}
          {Array.from({ length: boardSize }).map((_, y) =>
             Array.from({ length: boardSize }).map((_, x) => {
-               const v = ownership[y * boardSize + x]; // asumido fila 0 = 19
+               const v = ownership[y * boardSize + x]; // fila 0 = 19
                if (v == null) return null;
 
                let color: string | null = null;
