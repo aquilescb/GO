@@ -29,22 +29,16 @@ const AnalysisConfig = {
 const clamp01 = (x: number) => (Number.isFinite(x) ? (x < 0 ? 0 : x > 1 ? 1 : x) : 0.5);
 const normalizeKGS = (s: string) => (s ?? '').trim().toUpperCase();
 
-/** WR(side-to-move) -> WR de "user" */
-function wrSTM_to_userWR(wrSTM: number | undefined, sideToMove: Color, user: Color): number {
+/** WR(side-to-move) -> WR para "target" (color objetivo) */
+function wr_forColor(wrSTM: number | undefined, sideToMove: Color, target: Color): number {
   const w = typeof wrSTM === 'number' ? wrSTM : 0.5;
-  return clamp01(sideToMove === user ? w : 1 - w);
+  return clamp01(sideToMove === target ? w : 1 - w);
 }
 
-/** white lead -> lead de "color" */
+/** white lead (puntos a favor de blancas) -> lead de "color" (con signo) */
 function lead_forColor(whiteLead: number | undefined, color: Color): number {
   const v = typeof whiteLead === 'number' ? whiteLead : 0;
   return color === 'w' ? v : -v;
-}
-
-/** Para tablas heredadas “WR Black / Score Black” */
-function wrSTM_to_blackWR(wrSTM: number | undefined, sideToMove: Color): number {
-  const w = typeof wrSTM === 'number' ? wrSTM : 0.5;
-  return clamp01(sideToMove === 'b' ? w : 1 - w);
 }
 
 function toUpperMove(m?: string): string {
@@ -94,6 +88,7 @@ export class KatagoService implements OnModuleDestroy {
     this.rl = readline.createInterface({ input: this.proc.stdout });
     this.rl.on('line', (line) => this.onLine(line));
   }
+
   private onLine(line: string) {
     if (!line.trim()) return;
     let msg: J;
@@ -109,6 +104,7 @@ export class KatagoService implements OnModuleDestroy {
       ok(msg);
     }
   }
+
   private send<T = any>(payload: J, timeoutMs = 120_000): Promise<T> {
     if (!this.proc) this.ensureRunning();
     return new Promise<T>((resolve, reject) => {
@@ -131,6 +127,7 @@ export class KatagoService implements OnModuleDestroy {
       });
     });
   }
+
   stop(): void {
     try {
       this.rl?.close();
@@ -178,8 +175,12 @@ export class KatagoService implements OnModuleDestroy {
     // 1) Baseline (usuario al turno)
     const baselineRes = await this.analyzePosition(s.moves);
     const baseBest = sortByLeadForColor(getMoveInfos(baselineRes), userColor)[0];
-    const bestWRPre_user = wrSTM_to_userWR(baseBest?.winrate, userColor, userColor);
-    const bestScorePre_user = lead_forColor(baseBest?.scoreMean, userColor);
+    const bestWRPre_user = wr_forColor(
+      baseBest?.winrate,
+      /*sideToMove*/ userColor,
+      /*target*/ userColor,
+    );
+    const bestScorePre_user = lead_forColor(baseBest?.scoreMean, userColor); // puntos, con signo
 
     // 2) Juega usuario
     const userMove = normalizeKGS(userMoveRaw);
@@ -194,11 +195,15 @@ export class KatagoService implements OnModuleDestroy {
     const bestBot = sortedForBot[0];
     const botMove = toUpperMove(bestBot?.move) || 'PASS';
 
-    // Métricas del turno (perspectiva del USUARIO) — firmadas
-    const wrAfterUser_user = wrSTM_to_userWR(bestBot?.winrate, botColor, userColor);
+    // Métricas del turno (perspectiva del USUARIO) — con signo
+    const wrAfterUser_user = wr_forColor(
+      bestBot?.winrate,
+      /*sideToMove*/ botColor,
+      /*target*/ userColor,
+    );
     const scoreAfterUser_user = Math.abs(lead_forColor(bestBot?.scoreMean, userColor));
 
-    // Deltas ABS
+    // Deltas ABS (pérdida)
     const lossWinrate = Math.abs(bestWRPre_user - wrAfterUser_user);
     const lossPoints = Math.abs(bestScorePre_user - scoreAfterUser_user);
 
@@ -211,20 +216,23 @@ export class KatagoService implements OnModuleDestroy {
     const sortedForUserNext = sortByLeadForColor(getMoveInfos(nextRes), userColor);
 
     // === Candidatas del USUARIO ===
+    // Nota: mantenemos los nombres *winrateBlack/scoreMeanBlack* por compatibilidad con tu UI.
+    //       Ahora significan "winrate/score desde la perspectiva del USUARIO".
     const movUserRecommendations: CandidateBlackDTO[] = sortedForUserNext.slice(0, 3).map((mi) => ({
       move: toUpperMove(mi.move),
       prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
-      winrateBlack: wrSTM_to_blackWR(mi.winrate, userColor), // 0..1 (mostralo como % en el front)
-      scoreMeanBlack: lead_forColor(mi.scoreMean, userColor), // ← AHORA: ventaja DEL USUARIO
+      winrateBlack: wr_forColor(mi.winrate, /*sideToMove*/ userColor, /*target*/ userColor),
+      scoreMeanBlack: lead_forColor(mi.scoreMean, userColor),
       pv: takePV5(mi),
     }));
 
     // === Candidatas del BOT ===
+    // Aquí los valores están desde la perspectiva del BOT (porque está al turno en ese análisis).
     const movBotCandidates: CandidateBlackDTO[] = sortedForBot.slice(0, 3).map((mi) => ({
       move: toUpperMove(mi.move),
       prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
-      winrateBlack: wrSTM_to_blackWR(mi.winrate, botColor), // 0..1 (mostralo como % en el front)
-      scoreMeanBlack: lead_forColor(mi.scoreMean, botColor), // ← AHORA: ventaja DEL BOT
+      winrateBlack: wr_forColor(mi.winrate, /*sideToMove*/ botColor, /*target*/ botColor),
+      scoreMeanBlack: lead_forColor(mi.scoreMean, botColor),
       pv: takePV5(mi),
     }));
 
@@ -240,12 +248,12 @@ export class KatagoService implements OnModuleDestroy {
       MovBot: { botMove, candidates: movBotCandidates },
       MovUser: { recommendations: movUserRecommendations },
       metrics: {
-        bestWRPre: bestWRPre_user,
-        wrAfterUser: wrAfterUser_user,
-        lossWinrate,
-        bestScorePre: bestScorePre_user,
-        scoreAfterUser: scoreAfterUser_user,
-        lossPoints,
+        bestWRPre: bestWRPre_user, // 0..1
+        wrAfterUser: wrAfterUser_user, // 0..1
+        lossWinrate, // 0..1 (abs)
+        bestScorePre: bestScorePre_user, // puntos (con signo desde usuario)
+        scoreAfterUser: scoreAfterUser_user, // puntos (con signo desde usuario)
+        lossPoints, // puntos (abs)
       },
       ownership: ownershipFlat,
       state: { moves: s.moves.map(([, mv]) => mv) },

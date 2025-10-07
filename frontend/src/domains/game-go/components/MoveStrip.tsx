@@ -10,53 +10,48 @@ export default function MoveStrip({ history }: { history: Item[] }) {
 
    return (
       <div
-         className="w-full overflow-x-auto rounded-lg border border-[#2a3b48] bg-[#1b2a39] px-3 py-2"
+         className="w-full overflow-x-auto rounded-lg border border-[#2a3b48] bg-[#1b2a39] px-2 py-1.5"
          aria-label="Estado de movimiento"
       >
-         <div className="flex items-center gap-3 text-sm whitespace-nowrap">
+         <div className="flex items-center gap-3 text-xs whitespace-nowrap">
             {items.length === 0 && (
                <span className="opacity-70">Sin jugadas todavía</span>
             )}
 
-            {items.map((it, idx) => (
-               <div key={idx} className="flex items-center gap-3">
-                  {/* disco con número */}
-                  <div
-                     className="relative inline-flex items-center justify-center"
-                     title={`${
-                        it.by === "player" ? "Jugador" : "Bot"
-                     }: ${it.move.toUpperCase()}`}
-                  >
-                     <svg
-                        width="26"
-                        height="26"
-                        viewBox="0 0 26 26"
-                        aria-hidden
+            {items.map((it, idx) => {
+               const isPlayer = it.by === "player"; // negro = jugador
+               return (
+                  <div key={idx} className="flex items-center">
+                     {/* Disco 20px */}
+                     <div
+                        className="relative z-10 grid h-5 w-5 shrink-0 place-items-center rounded-full"
+                        title={`${
+                           isPlayer ? "Jugador" : "Bot"
+                        }: ${it.move.toUpperCase()}`}
+                        style={{
+                           background: isPlayer ? "#171717" : "#F8FAFC",
+                           border: isPlayer ? "0" : "1px solid #0f172a",
+                        }}
                      >
-                        <circle
-                           cx="13"
-                           cy="13"
-                           r="11"
-                           fill={it.by === "player" ? "#171717" : "#F8FAFC"}
-                           stroke={it.by === "player" ? "none" : "#0f172a"}
-                           strokeWidth={it.by === "player" ? 0 : 1}
-                        />
-                     </svg>
-                     <span
-                        className={`absolute text-[11px] font-semibold ${
-                           it.by === "player" ? "text-white" : "text-slate-800"
-                        }`}
-                        style={{ lineHeight: 1 }}
-                     >
-                        {it.n}
-                     </span>
-                  </div>
+                        <span
+                           className={`text-[10px] font-semibold leading-none ${
+                              isPlayer ? "text-white" : "text-slate-800"
+                           }`}
+                        >
+                           {it.n}
+                        </span>
+                     </div>
 
-                  {idx < items.length - 1 && (
-                     <span className="opacity-60">→</span>
-                  )}
-               </div>
-            ))}
+                     {/* Conector unido: usa DIV (block) para respetar width/height */}
+                     {idx < items.length - 1 && (
+                        <div
+                           aria-hidden
+                           className="z-0 mx-0 h-px w-12 shrink-0 bg-white/30 -ml-[10px] -mr-[10px] block"
+                        />
+                     )}
+                  </div>
+               );
+            })}
          </div>
       </div>
    );

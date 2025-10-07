@@ -1,37 +1,49 @@
 import { useEffect, useRef, useState } from "react";
 
-export default function SketchCanvas({
-   ratio = 1, // alto = ancho * ratio; 1 = cuadrado
-}: {
-   ratio?: number;
-}) {
-   const wrapperRef = useRef<HTMLDivElement | null>(null);
-   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-   const [drawing, setDrawing] = useState(false);
-   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
+type Props = {
+   ratio?: number; // alto = ancho * ratio
+   active?: boolean; // recibe eventos solo si está activo
+   attachRef?: React.RefObject<HTMLElement>; // se ajusta al tamaño del tablero
+   version?: number; // cambia para limpiar
+};
 
-   // Resize canvas to wrapper width
+export default function SketchCanvas({
+   ratio = 1,
+   active = false,
+   attachRef,
+   version = 0,
+}: Props) {
+   const localWrapperRef = useRef<HTMLDivElement | null>(null);
+   const wrapperRef = attachRef ?? localWrapperRef; // si no pasan ref, usa propio
+   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
+   const [drawing, setDrawing] = useState(false);
+
+   // Ajustar canvas al wrapper (tablero)
    const resize = () => {
-      const el = wrapperRef.current;
+      const el = wrapperRef.current as HTMLElement | null;
       const canvas = canvasRef.current;
       if (!el || !canvas) return;
+
       const w = Math.floor(el.clientWidth);
       const h = Math.floor(w * ratio);
-      // set canvas bitmap size
+
       canvas.width = w;
       canvas.height = h;
-      // set css size
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
    };
 
    useEffect(() => {
       resize();
+      const el = wrapperRef.current;
+      if (!el) return;
       const ro = new ResizeObserver(() => resize());
-      if (wrapperRef.current) ro.observe(wrapperRef.current);
+      ro.observe(el);
       return () => ro.disconnect();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, []);
+   }, [wrapperRef.current]);
 
    useEffect(() => {
       if (!canvasRef.current) return;
@@ -44,53 +56,67 @@ export default function SketchCanvas({
       setCtx(c);
    }, []);
 
-   const getPos = (e: React.MouseEvent<HTMLCanvasElement, MouseEvent>) => {
+   // Limpiar cuando cambia "version"
+   useEffect(() => {
+      if (!ctx || !canvasRef.current) return;
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+   }, [version, ctx]);
+
+   // Usamos Pointer Events (mouse + touch)
+   const getPos = (e: React.PointerEvent<HTMLCanvasElement>) => {
       const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
    };
 
-   const onDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!ctx) return;
+   const onDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!ctx || !active) return;
+      (e.target as HTMLCanvasElement).setPointerCapture(e.pointerId);
       const { x, y } = getPos(e);
       ctx.beginPath();
       ctx.moveTo(x, y);
       setDrawing(true);
    };
-   const onMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (!ctx || !drawing) return;
+
+   const onMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      if (!ctx || !drawing || !active) return;
       const { x, y } = getPos(e);
       ctx.lineTo(x, y);
       ctx.stroke();
    };
-   const onUp = () => setDrawing(false);
 
-   const clear = () => {
-      if (!ctx || !canvasRef.current) return;
-      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+   const onUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+      setDrawing(false);
+      try {
+         (e.target as HTMLCanvasElement).releasePointerCapture(e.pointerId);
+      } catch {}
    };
 
    return (
-      <div className="space-y-2">
-         <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Lápiz</span>
-            <button
-               onClick={clear}
-               className="px-2 py-1 rounded bg-[#2a3b48] hover:bg-[#34485a] text-xs"
-            >
-               Limpiar
-            </button>
-         </div>
+      // Si no recibimos attachRef, usamos un wrapper propio (por compat)
+      <>
+         {!attachRef && (
+            <div ref={localWrapperRef} className="relative w-full">
+               <div className="absolute inset-0" />
+            </div>
+         )}
 
-         <div ref={wrapperRef} className="w-full">
+         {/* Overlay absoluto sobre el tablero */}
+         <div
+            className={`absolute inset-0 ${
+               active ? "pointer-events-auto" : "pointer-events-none"
+            }`}
+            style={{ zIndex: 20, cursor: active ? "crosshair" : "default" }}
+         >
             <canvas
                ref={canvasRef}
-               className="rounded border border-[#2a3b48] bg-transparent block w-full"
-               onMouseDown={onDown}
-               onMouseMove={onMove}
-               onMouseUp={onUp}
-               onMouseLeave={onUp}
+               className="block w-full h-full bg-transparent"
+               onPointerDown={onDown}
+               onPointerMove={onMove}
+               onPointerUp={onUp}
+               onPointerCancel={onUp}
+               onPointerLeave={onUp}
             />
          </div>
-      </div>
+      </>
    );
 }

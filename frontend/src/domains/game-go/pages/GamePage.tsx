@@ -24,7 +24,7 @@ export default function GamePage() {
    const [metrics, setMetrics] = useState<PlayEvalV2Response["metrics"]>();
    const [movBot, setMovBot] = useState<PlayEvalV2Response["MovBot"]>();
    const [movUser, setMovUser] = useState<PlayEvalV2Response["MovUser"]>();
-   const [stateMoves, setStateMoves] = useState<string[]>([]);
+   const [, setStateMoves] = useState<string[]>([]);
    const [ownership, setOwnership] = useState<number[] | undefined>(undefined);
 
    const [error, setError] = useState<string>();
@@ -127,7 +127,7 @@ export default function GamePage() {
             {/* IZQUIERDA */}
             <aside className="space-y-3 lg:sticky lg:top-[64px] lg:self-start">
                <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
-                  <h3 className="font-semibold mb-2 text-[#f0c23b]">
+                  <h3 className="font-semibold mb-2 text-[#f0c23b] text-center">
                      Mapa de Influencia
                   </h3>
                   <OverlayOwnership ownership={ownership} size={280} />
@@ -150,10 +150,10 @@ export default function GamePage() {
                   {/* METRICS */}
                   {metrics && (
                      <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
-                        <h4 className="font-semibold mb-3 text-[#f0c23b]">
+                        <h4 className="font-semibold mb-3 text-[#f0c23b] text-center">
                            Datos del KataGo
                         </h4>
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-3 text-sm">
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-3 text-center">
                            <MetricBlock
                               title="Delta Puntos"
                               value={formatFixed3(metrics.lossPoints)}
@@ -165,7 +165,7 @@ export default function GamePage() {
                               )}`}
                            />
                            <MetricBlock
-                              title="Delta Winrate (pp)"
+                              title="Delta Winrate"
                               value={
                                  (metrics.lossWinrate * 100).toFixed(2) + "%"
                               }
