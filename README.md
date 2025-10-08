@@ -1,151 +1,84 @@
-# 🧠 GO Software - Plataforma Web Interactiva para Aprender y Jugar GO
+# KataGo Web — Juego + Análisis con IA
 
-Plataforma web escalable y profesional donde los usuarios pueden jugar partidas de GO contra motores como **GnuGo**, **Pachi**, **LeelaZero** o **KataGo**, con asistencia reflexiva en tiempo real, informes personalizados y seguimiento de progreso.
+Plataforma web para jugar Go contra **KataGo** y **aprender de los errores** en tiempo real.
 
----
+## ✨ Funcionalidades
 
-## 🎯 Objetivo del Proyecto
-Combinar juego, análisis y mejora continua con inteligencia artificial para ofrecer una experiencia educativa y entretenida.
+-  **Partida 19×19** vs. IA (KataGo, modo _analysis_).
+-  **Mapa de influencia** (ownership) en vivo.
+-  **Sistema de Errores (Δ / Delta)** por turno:
+   -  **Delta Winrate**: cambio en probabilidad de victoria.
+   -  **Delta Puntos**: cambio en la ventaja de puntos.
+-  **Recomendaciones para el usuario** (Top-3 con PV/WR/Score).
+-  **Tablero independiente (“laboratorio”)** para practicar y dibujar.
+-  **Selector de dificultad / hardware / red** antes de jugar.
 
----
+## 🧩 Arquitectura
 
-## 🧱 Funcionalidades Clave
-- 🕹 Juego de GO contra motores: **GnuGo**, **Pachi**, **LeelaZero** y **KataGo**.
-- 🤖 Chatbot reflexivo que guía al jugador con preguntas, no con jugadas directas.
-- 📑 Informe post-partida con feedback generado por IA.
-- 🧠 Ejercicios personalizados según errores cometidos.
-- 📊 Dashboard con estadísticas y logros.
-- 🎯 Preparado para sistema de suscripciones y roles.
+-  **Frontend**: Vite + React + TypeScript + Tailwind.
+-  **Backend**: NestJS (Node 18+).
+-  **Motor**: KataGo (ejecutable local) en modo `analysis`.
+-  **Comunicación**: HTTP/JSON (REST).
+-  **Estado**: sesión en memoria (lista de jugadas).
 
----
+## 🗂️ Estructura (extracto)
 
-## 🧪 Tecnologías Utilizadas
-### 📦 Backend
-- NestJS + TypeScript
-
-### 🖥 Frontend
-- React + Vite + TypeScript
-- TailwindCSS
-- Framer Motion
-- React Query (TanStack)
-
-### 🤖 IA & Motores
-- OpenAI GPT-4o
-- [GnuGo](https://www.gnu.org/software/gnugo/download.html) (motor lógico clásico)
-- [Pachi](https://github.com/pasky/pachi)
-- [LeelaZero](https://github.com/leela-zero/leela-zero/releases)
-- [KataGo](https://github.com/lightvector/KataGo/releases) + redes oficiales en [katagotraining.org/networks](https://katagotraining.org/networks/)
-
----
-
-## 🚀 Instalación y Ejecución
-
-### 1. Clonar el repositorio
-```bash
-git clone https://github.com/aquilescb/GO
-cd GO
-```
-
----
-
-### 2. Requisitos previos
-- **Node.js**: [Descargar aquí](https://nodejs.org/es)  
-- **Windows 10/11** 
----
-
-### 3. Instalación de Motores
-
-> **IMPORTANTE:** Todos los motores van dentro de la carpeta `backend/engines` siguiendo la estructura exacta.  
-> No colocar dentro de `src`.
-
-Estructura esperada:
-```
 backend/
-│── engines/
-│   ├── gnugo/
-│   │   └── interface/
-│   ├── katago/
-│   ├── leelaz/
-│   └── pachi/
-│── src/
-```
+engines/katago/
+katago.exe
+networks/
+kata1-b15c192-....txt.gz
+analysis_web.cfg # se genera automáticamente
+src/engine/katago/
+runtime-config.ts # presets/hardware y writer del CFG
+katago.service.ts # lifecycle + análisis
+engine.controller.ts # endpoints REST
+src/engine/engine.analysis.config.ts # RuntimeConfig + envs
 
----
+frontend/
+src/domains/game-go/pages/
+HomePage.tsx # selector preset/hardware/red y start
+GamePage.tsx # tablero + métricas + delta
+src/domains/game-go/components/
+Board.tsx, OverlayOwnership.tsx, MoveStrip.tsx, PracticeBoard.tsx, TagsSelect.tsx
+src/lib/api/katagoApi.ts # cliente REST
 
-#### 🔹 GnuGo
-1. Descargar desde: [GNU Go Official](https://www.gnu.org/software/gnugo/download.html)  
-   También disponible para Windows aquí: [gnugo.baduk.org](https://gnugo.baduk.org/)  
+## ⚙️ Configuración dinámica
 
-2. Crear la carpeta:
-```
-backend/engines/gnugo/interface/
-```
+En **Home** elegís:
 
-3. Copiar los siguientes archivos dentro de `interface/`:
-- `gnugo.exe`
-- `cyggcc_s-1.dll`
-- `cygncurses-10.dll`
-- `cygwin1.dll`
-- `COPYING`
+-  **Dificultad**: `easy | medium | hard | pro` (controla `maxVisits`).
+-  **Hardware**: `cpu-low | cpu-mid | gpu` (hilos de búsqueda y batch NN).
+-  **Red neuronal**: nombre del archivo dentro de `engines/katago/networks/`.
 
----
+Al aplicar, el backend re-escribe `analysis_web.cfg` y relanza KataGo.
 
-#### 🔹 KataGo
-1. Descargar desde: [KataGo Releases](https://github.com/lightvector/KataGo/releases)  
-   Elige **Windows OpenCL** o **Windows CUDA** según tu hardware. Lo mas recomendable es **OpenCL**
+## 🔌 Endpoints (resumen)
 
-2. Copiar todo el contenido extraído en:
-```
-backend/engines/katago/
-```
+-  `POST /game/start` — inicia motor + resetea sesión.
+-  `POST /game/shutdown` — detiene motor.
+-  `POST /game/play-eval` — `{ move: "D4" }` → análisis + delta + sugerencias.
+-  `GET  /game/config` — devuelve configuración vigente.
+-  `POST /game/config/apply` — cambia `preset/hardware/network` y reinicia motor.
 
-3. Descargar la red neuronal desde: [KataGo Networks](https://katagotraining.org/networks/)  
-   - Ejemplo: `g170e-b15c192-s1672170752-d466197061.txt.gz`  
-   - Crear la carpeta network si no exsite en el siguiente ruta: `backend/engines/katago/networks/`. Luego meter el archivo dentro de esa carpeta
+## ▶️ Cómo correr
 
----
+Ver **RUN_LOCAL.md** para guía paso a paso (.env, comandos, troubleshooting).
 
-#### 🔹 LeelaZero
-1. Descargar Leela Zero 0.17 + AutoGTP v18 desde:  
-   [Leela Zero Releases](https://github.com/leela-zero/leela-zero/releases)
+## 📚 Glosario rápido
 
-2. Copiar todo en:
-```
-backend/engines/leelaz/
-```
+-  **WR (Winrate)**: probabilidad de victoria (0–100%).
+-  **Score**: ventaja en puntos (signo/magnitud).
+-  **PV**: principal variation (secuencia prevista).
+-  **Delta**: diferencia entre “línea óptima” y “lo jugado por el usuario”.
 
-3. Descargar una red desde:  
-   [Leela Networks](https://zero.sjeng.org/networks) o [leela.online-go.com/networks](https://leela.online-go.com/networks/?C=M&O=D)  
-   - Renombrar el archivo a `weights.txt.gz`  
-   - Colocarlo en `backend/engines/leelaz/`.
+## 🛣️ Roadmap breve
 
----
+-  Exportar partidas a **SGF**.
+-  Histórico de **Delta** por partida (gráfico).
+-  Endpoint para listar redes en `networks/`.
+-  Preset alternativo por **tiempo fijo** (`maxTime`).
 
-#### 🔹 Pachi
-1. Descargar desde: [Pachi GitHub](https://github.com/pasky/pachi) o binarios de [gnugo.baduk.org](https://gnugo.baduk.org/).
+## 📜 Licencia
 
-2. Copiar los binarios y librerías necesarias en:
-```
-backend/engines/pachi/
-```
-
----
-## Instalar dependencias y ejecutar los servidores
-
-### 4. Backend
-```bash
-cd backend
-npm install
-npm run star:dev
-```
-
----
-
-### 5. Frontend
-```bash
-cd ../frontend
-npm install
-npm run dev
-```
-
----
+Uso interno / demo (ajustar según el proyecto).

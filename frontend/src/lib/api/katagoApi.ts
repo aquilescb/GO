@@ -17,7 +17,7 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
    try {
       data = await res.json();
    } catch {
-      /* empty */
+      /* no-op */
    }
    if (!res.ok) {
       throw new Error(
@@ -27,6 +27,21 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
    return data as T;
 }
 
+/* ===== Tipos de configuración ===== */
+export type Preset = "easy" | "medium" | "hard" | "pro";
+export type Hardware = "cpu-low" | "cpu-mid" | "gpu";
+
+export type EngineConfig = {
+   preset: Preset;
+   hardware: Hardware;
+   networkFilename: string;
+   networksDir: string;
+   boardSize: number;
+   komi: number;
+   rules: string;
+};
+
+/* ===== Endpoints existentes ===== */
 export function startGame() {
    return http<{ status: "ok"; message: string }>("/game/start", {
       method: "POST",
@@ -44,4 +59,25 @@ export function playEval(move: string): Promise<PlayEvalV2Response> {
       method: "POST",
       body: JSON.stringify({ move }),
    });
+}
+
+/* ===== Nueva API de configuración ===== */
+export function getKataConfig() {
+   return http<EngineConfig>("/game/config", { method: "GET" });
+}
+
+export function applyKataConfig(body: {
+   preset?: Preset;
+   hardware?: Hardware;
+   networkFilename?: string; // p.ej. "kata1-b15c192-....txt.gz"
+}) {
+   return http<{ status: "ok"; applied: EngineConfig }>("/game/config/apply", {
+      method: "POST",
+      body: JSON.stringify(body),
+   });
+}
+
+/* (Opcional) listar modelos si exponés un endpoint /game/networks */
+export function listNetworks() {
+   return http<{ files: string[] }>("/game/networks", { method: "GET" });
 }
