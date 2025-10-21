@@ -13,9 +13,106 @@ interface Props {
 const SIZE = 19;
 const LETTERS = "ABCDEFGHJKLMNOPQRST";
 
-// padding del viewBox para dibujar las etiquetas dentro del SVG
-const VIEWBOX_PAD_X = 6; // a la izquierda
-const VIEWBOX_PAD_Y = 6; // arriba
+const VIEWBOX_PAD_X = 6;
+const VIEWBOX_PAD_Y = 6;
+
+type Color = "black" | "white";
+type Key = string;
+
+function key(x: number, y: number): Key {
+   return `${x},${y}`;
+}
+
+function inBoard(x: number, y: number) {
+   return x >= 0 && y >= 0 && x < SIZE && y < SIZE;
+}
+
+function neighbors(x: number, y: number) {
+   const ns = [
+      [x - 1, y],
+      [x + 1, y],
+      [x, y - 1],
+      [x, y + 1],
+   ] as const;
+   return ns.filter(([nx, ny]) => inBoard(nx, ny));
+}
+
+/** BFS: devuelve el grupo conectado (misma color) y su cantidad de libertades */
+function collectGroup(
+   startX: number,
+   startY: number,
+   color: Color,
+   board: StoneMap
+) {
+   const stones: Array<[number, number]> = [];
+   const seen = new Set<Key>();
+   const q: Array<[number, number]> = [[startX, startY]];
+   let liberties = 0;
+
+   while (q.length) {
+      const [x, y] = q.pop()!;
+      const k = key(x, y);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      stones.push([x, y]);
+
+      for (const [nx, ny] of neighbors(x, y)) {
+         const nk = key(nx, ny);
+         const c = board[nk];
+         if (!c) {
+            liberties++;
+         } else if (c === color && !seen.has(nk)) {
+            q.push([nx, ny]);
+         }
+      }
+   }
+
+   return { stones, liberties };
+}
+
+/** Aplica capturas sobre una copia de `board` tras colocar una piedra en (x,y) */
+function applyMoveWithCaptures(
+   board: StoneMap,
+   x: number,
+   y: number,
+   color: Color
+) {
+   const me = color;
+   const opp: Color = color === "black" ? "white" : "black";
+   const K = key(x, y);
+
+   // colocar piedra (asumimos jugada legal)
+   board[K] = me;
+
+   // capturar grupos rivales sin libertades
+   const toCheckOpp = neighbors(x, y)
+      .map(([nx, ny]) => [nx, ny, board[key(nx, ny)]] as const)
+      .filter(([, , c]) => c === opp);
+
+   for (const [nx, ny] of toCheckOpp.map(
+      ([a, b]) => [a, b] as [number, number]
+   )) {
+      const { stones, liberties } = collectGroup(nx, ny, opp, board);
+      if (liberties === 0) {
+         for (const [gx, gy] of stones) delete board[key(gx, gy)];
+      }
+   }
+
+   // si (por rareza) quedara suicida, lo quitamos (KataGo no debería permitirlo)
+   const { liberties: myLibs } = collectGroup(x, y, me, board);
+   if (myLibs === 0) delete board[K];
+}
+
+/** Simula todas las jugadas del historial aplicando capturas */
+function buildBoardFromMoves(moves: Move[]): StoneMap {
+   const board: StoneMap = {};
+   for (const m of moves) {
+      if (!inBoard(m.x, m.y)) continue; // ignora PASS u out-of-bounds si apareciera
+      if (board[key(m.x, m.y)]) continue; // ya ocupado (defensivo)
+      applyMoveWithCaptures(board, m.x, m.y, m.color as Color);
+   }
+   return board;
+}
 
 export default function Board({
    moves,
@@ -29,17 +126,15 @@ export default function Board({
    const gridSize = 100;
    const cell = gridSize / (SIZE - 1);
 
+   // ⬇️ AQUÍ el cambio clave: simulamos capturas
    const stonesMap: StoneMap = useMemo(() => {
-      const o: StoneMap = {};
-      for (const m of moves) o[`${m.x},${m.y}`] = m.color;
-      return o;
+      return buildBoardFromMoves(moves);
    }, [moves]);
 
    const handleClick = (x: number, y: number) => {
       if (botThinking) return;
       if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return;
-      // NO permitir poner si ya hay piedra (tuya o del bot)
-      if (stonesMap[`${x},${y}`]) return;
+      if (stonesMap[key(x, y)]) return; // casilla ocupada
       onPlay(xyToCoord(x, y));
    };
 
@@ -115,7 +210,7 @@ export default function Board({
             )}
 
             {/* Hover guide */}
-            {hover && !botThinking && !stonesMap[`${hover.x},${hover.y}`] && (
+            {hover && !botThinking && !stonesMap[key(hover.x, hover.y)] && (
                <circle
                   cx={hover.x * cell}
                   cy={hover.y * cell}
@@ -130,7 +225,7 @@ export default function Board({
             {/* Stones */}
             {[...Array(SIZE)].flatMap((_, y) =>
                [...Array(SIZE)].map((_, x) => {
-                  const stone = stonesMap[`${x},${y}`];
+                  const stone = stonesMap[key(x, y)];
                   const cx = x * cell,
                      cy = y * cell;
                   const isLastBot = lastBotMove

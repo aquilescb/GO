@@ -50,7 +50,7 @@ const HW: Record<
 > = {
   'cpu-low': {
     numAnalysisThreads: 1,
-    numSearchThreads: 4,
+    numSearchThreads: 1,
     nnCacheSizePowerOfTwo: 20,
     nnMutexPoolSizePowerOfTwo: 17,
     nnMaxBatchSize: 4,
@@ -78,8 +78,8 @@ const PRESET: Record<
   DifficultyPreset,
   Pick<KataEffective, 'maxVisits' | 'analysisPVLen' | 'wideRootNoise'>
 > = {
-  easy: { maxVisits: 90, analysisPVLen: 5, wideRootNoise: 0.03 },
-  medium: { maxVisits: 180, analysisPVLen: 6, wideRootNoise: 0.03 },
+  easy: { maxVisits: 60, analysisPVLen: 5, wideRootNoise: 0.05 },
+  medium: { maxVisits: 120, analysisPVLen: 6, wideRootNoise: 0.04 },
   hard: { maxVisits: 400, analysisPVLen: 6, wideRootNoise: 0.02 },
   pro: { maxVisits: 1000, analysisPVLen: 7, wideRootNoise: 0.01 },
 };

@@ -6,11 +6,9 @@ import Board from "@/domains/game-go/components/Board";
 import OverlayOwnership from "@/domains/game-go/components/OverlayOwnership";
 import MoveStrip from "@/domains/game-go/components/MoveStrip";
 import PracticeBoard from "@/domains/game-go/components/PracticeBoard";
-import TagsSelect from "@/domains/game-go/components/TagsSelect";
-
 import { playEval, shutdownEngine, startGame } from "@/lib/api/katagoApi";
 import { coordToXY, formatFixed3 } from "@/lib/utils/coords";
-
+import CommentBox from "../components/CommentBox";
 import type { Move } from "@/lib/types/ui";
 import type { PlayEvalV2Response } from "@/lib/types/katago";
 
@@ -26,13 +24,19 @@ export default function GamePage() {
    const [movUser, setMovUser] = useState<PlayEvalV2Response["MovUser"]>();
    const [, setStateMoves] = useState<string[]>([]);
    const [ownership, setOwnership] = useState<number[] | undefined>(undefined);
+   const [comments, setComments] = useState<Record<number, string>>({});
 
    const [error, setError] = useState<string>();
-   const [tags, setTags] = useState<string[]>([]);
+
    const [history, setHistory] = useState<
       { move: string; by: "player" | "bot" }[]
    >([]);
    const rightRef = useRef<HTMLDivElement>(null);
+
+   const currentIdx = history.length - 1;
+   const currentComment = comments[currentIdx] ?? "";
+   const setCurrentComment = (comment: string) =>
+      setComments((c) => ({ ...c, [currentIdx]: comment }));
 
    useEffect(() => {
       if (rightRef.current)
@@ -54,6 +58,7 @@ export default function GamePage() {
             setHistory([]);
             setError(undefined);
             setLastBotMove(undefined);
+            setComments({});
             setEngineReady(true);
          } catch (e: any) {
             setError(
@@ -87,8 +92,6 @@ export default function GamePage() {
          setMovUser(res.MovUser);
          setStateMoves(res.state.moves);
          setOwnership(res.ownership);
-         // 👉 si querés verlo en consola sin formato:
-         // console.log("METRICS DEBUG:", res.metrics.debug);
       } catch (e: any) {
          setMoves((m) => m.slice(0, -1));
          setHistory((h) => h.slice(0, -1));
@@ -99,7 +102,27 @@ export default function GamePage() {
       }
    }
    const handlePass = async () => {
-      await handlePlay("PASS");
+      if (!engineReady || botThinking) return;
+      setBotThinking(true);
+      try {
+         const res = await playEval("PASS");
+         // actualizar métricas/ownership/lastBotMove igual que con jugada normal
+         if (res.MovBot?.botMove) {
+            const botMoveXY = {
+               ...coordToXY(res.MovBot.botMove),
+               color: "white" as const,
+            };
+            setMoves((m) => [...m, botMoveXY]);
+         }
+         setMetrics(res.metrics);
+         setMovBot(res.MovBot);
+         setMovUser(res.MovUser);
+         setOwnership(res.ownership);
+      } catch (e: any) {
+         setError(`Error al pasar: ${e?.message ?? "desconocido"}`);
+      } finally {
+         setBotThinking(false);
+      }
    };
 
    return (
@@ -133,7 +156,10 @@ export default function GamePage() {
                   <OverlayOwnership ownership={ownership} size={280} />
                </div>
                <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
-                  <TagsSelect value={tags} onChange={setTags} />
+                  <CommentBox
+                     value={currentComment}
+                     onChange={setCurrentComment}
+                  />
                </div>
             </aside>
 

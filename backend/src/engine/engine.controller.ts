@@ -43,8 +43,11 @@ export class EngineController {
       networkFilename?: string;
     },
   ) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (body.preset) (AnalysisConfig as any).preset = body.preset;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (body.hardware) (AnalysisConfig as any).hardware = body.hardware;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     if (body.networkFilename) (AnalysisConfig as any).networkFilename = body.networkFilename;
 
     this.kg.applyConfigAndRestart();
