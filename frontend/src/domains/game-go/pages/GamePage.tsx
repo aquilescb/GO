@@ -173,48 +173,81 @@ export default function GamePage() {
                />
 
                <div className="w-full space-y-3">
-                  {/* METRICS */}
+                  {/* Delta Winrate */}
+
                   {metrics && (
                      <div className="rounded-xl border border-[#2a3b48] bg-[#1b2a39] p-4">
                         <h4 className="font-semibold mb-3 text-[#f0c23b] text-center">
-                           Datos del KataGo
+                           Análisis de tu Jugada
                         </h4>
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-2 gap-3 text-center">
+
+                        <div className="grid sm:grid-cols-2 gap-3">
+                           {/* Delta Puntos */}
                            <MetricBlock
                               title="Delta Puntos"
                               value={formatFixed3(metrics.lossPoints)}
-                              ok={metrics.lossPoints <= 0.15}
-                              desc={`PV ${formatFixed3(
-                                 metrics.scoreAfterUser
-                              )} · Usuario ${formatFixed3(
-                                 metrics.bestScorePre
-                              )}`}
+                              ok={Math.abs(metrics.lossPoints) <= 1.5}
+                              desc={
+                                 <RowKV
+                                    k="Mejor / Tu jugada"
+                                    v={`${formatFixed3(
+                                       metrics.bestScorePre
+                                    )} / ${formatFixed3(
+                                       metrics.scoreAfterUser
+                                    )}`}
+                                 />
+                              }
                            />
+
+                           {/* Delta Winrate */}
                            <MetricBlock
                               title="Delta Winrate"
                               value={
                                  (metrics.lossWinrate * 100).toFixed(2) + "%"
                               }
-                              ok={metrics.lossWinrate <= 0.3}
-                              desc={`PV ${(metrics.bestWRPre * 100).toFixed(
-                                 2
-                              )}% · Usuario ${(
-                                 metrics.wrAfterUser * 100
-                              ).toFixed(2)}%`}
+                              ok={metrics.lossWinrate <= 0}
+                              desc={
+                                 <>
+                                    <RowKV
+                                       k="Mejor / Tu jugada"
+                                       v={`${(metrics.bestWRPre * 100).toFixed(
+                                          2
+                                       )}% / ${(
+                                          metrics.wrAfterUser * 100
+                                       ).toFixed(2)}%`}
+                                    />
+                                    {metrics.lossWinrate > 0 ? (
+                                       <div className="mt-2 text-red-300">
+                                          Perdiste Winrate (
+                                          {(
+                                             Math.abs(metrics.lossWinrate) * 100
+                                          ).toFixed(2)}
+                                          %)
+                                       </div>
+                                    ) : (
+                                       <div className="mt-2 text-green-300">
+                                          Ganaste Winrate (
+                                          {(
+                                             Math.abs(metrics.lossWinrate) * 100
+                                          ).toFixed(2)}
+                                          %)
+                                       </div>
+                                    )}
+                                 </>
+                              }
                            />
                         </div>
                      </div>
                   )}
-
                   {/* BOT */}
                   {movBot && (
                      <Block title="Datos del Movimiento del KataGo (Bot)">
                         <MiniGrid
                            list={[
-                              ["Bot Best Move", movBot.botMove],
+                              ["Bot Best Move", movBot.botMove ?? "—"],
                               [
                                  "Winrate",
-                                 movBot.candidates[0]
+                                 movBot.candidates?.[0]
                                     ? `${(
                                          movBot.candidates[0].winrateBlack * 100
                                       ).toFixed(2)}%`
@@ -222,7 +255,7 @@ export default function GamePage() {
                               ],
                               [
                                  "Score",
-                                 movBot.candidates[0]
+                                 movBot.candidates?.[0]
                                     ? formatFixed3(
                                          movBot.candidates[0].scoreMeanBlack
                                       )
@@ -232,27 +265,26 @@ export default function GamePage() {
                         />
                         <PV
                            label="PV (Best)"
-                           pv={movBot.candidates[0]?.pv ?? []}
+                           pv={movBot.candidates?.[0]?.pv ?? []}
                         />
                         <CandidatesTable
-                           rows={movBot.candidates}
+                           rows={movBot.candidates ?? []}
                            title="Candidatas del Bot (top-3)"
                         />
                      </Block>
                   )}
 
-                  {/* USUARIO */}
                   {movUser && (
-                     <Block title="Consejos para el Usuario">
+                     <Block title="Consejos para el Usuario (próximo turno)">
                         <MiniGrid
                            list={[
                               [
-                                 "Sugerida",
-                                 movUser.recommendations[0]?.move ?? "—",
+                                 "Mejor sugerida",
+                                 movUser.recommendations?.[0]?.move ?? "—",
                               ],
                               [
                                  "Winrate",
-                                 movUser.recommendations[0]
+                                 movUser.recommendations?.[0]
                                     ? `${(
                                          movUser.recommendations[0]
                                             .winrateBlack * 100
@@ -261,7 +293,7 @@ export default function GamePage() {
                               ],
                               [
                                  "Score",
-                                 movUser.recommendations[0]
+                                 movUser.recommendations?.[0]
                                     ? formatFixed3(
                                          movUser.recommendations[0]
                                             .scoreMeanBlack
@@ -272,10 +304,10 @@ export default function GamePage() {
                         />
                         <PV
                            label="PV (del best usuario)"
-                           pv={movUser.recommendations[0]?.pv ?? []}
+                           pv={movUser.recommendations?.[0]?.pv ?? []}
                         />
                         <CandidatesTable
-                           rows={movUser.recommendations}
+                           rows={movUser.recommendations ?? []}
                            title="Recomendaciones para el Usuario (top-3)"
                         />
                      </Block>
@@ -323,7 +355,7 @@ function MetricBlock({
    title: string;
    value: string;
    ok?: boolean;
-   desc: string;
+   desc: React.ReactNode; // 👈 antes era string
 }) {
    return (
       <div className="rounded-md bg-[#203142] p-2">
@@ -331,7 +363,7 @@ function MetricBlock({
          <div className={`text-lg ${ok ? "text-green-300" : "text-red-300"}`}>
             {value}
          </div>
-         <div className="text-xs opacity-70">{desc}</div>
+         <div className="text-xs opacity-90 mt-1">{desc}</div>
       </div>
    );
 }
@@ -418,6 +450,14 @@ function CandidatesTable({
                </tbody>
             </table>
          </div>
+      </div>
+   );
+}
+function RowKV({ k, v }: { k: string; v: string }) {
+   return (
+      <div className="flex items-center justify-between text-xs opacity-80">
+         <span>{k}</span>
+         <span className="font-semibold opacity-100">{v}</span>
       </div>
    );
 }

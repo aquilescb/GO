@@ -1,5 +1,3 @@
-// src/engine/engine.types.ts
-
 export type Color = 'b' | 'w';
 
 /** ===== Tipos crudos del output del analysis engine ===== */
@@ -9,11 +7,13 @@ export interface KgMoveInfo {
   policy?: number;
   winrate?: number; // con tu CFG: prob. de ganar del lado al turno (SIDE-TO-MOVE)
   scoreMean?: number; // white lead (puntos a favor de blancas)
-  pv?: string[];
+  pv?: string[]; // Principal variation (máx 5)
 }
+
 export interface KgTurnInfo {
-  ownership?: number[];
+  ownership?: number[]; // Propiedad de las celdas en el tablero
 }
+
 export interface KgAnalysisRaw {
   rootInfo?: { moveInfos?: KgMoveInfo[]; ownership?: number[] };
   root?: { moveInfos?: KgMoveInfo[]; ownership?: number[] };
@@ -32,37 +32,43 @@ export interface CandidateBlackDTO {
 }
 
 export interface SessionData {
-  moves: Array<[Color, string]>;
-  nextColor: Color;
+  moves: Array<[Color, string]>; // Registro de jugadas (Color, Jugada)
+  nextColor: Color; // Siguiente turno: 'b' o 'w'
 }
 
 export interface PlayEvalV2Response {
   MovBot: {
     botMove: string;
-    candidates: CandidateBlackDTO[]; // top-3
+    candidates: CandidateBlackDTO[];
   };
   MovUser: {
-    recommendations: CandidateBlackDTO[]; // top-3
+    recommendations: CandidateBlackDTO[];
   };
   metrics: {
-    bestWRPre: number; // [0..1] WR usuario de la MEJOR del baseline
-    wrAfterUser: number; // [0..1] WR usuario tras la jugada del usuario (turno del bot)
-    lossWinrate: number; // ABS(bestWRPre - wrAfterUser)
-    bestScorePre: number; // puntos usuario de la MEJOR del baseline
-    scoreAfterUser: number; // puntos usuario tras la jugada del usuario
-    lossPoints: number; // ABS(bestScorePre - scoreAfterUser)
-    debug?: {
-      stmBaseline: Color; // quién estaba al turno en baseline (usuario)
-      wrSTMBaseline?: number; // WR side-to-move reportado por KataGo (baseline)
-      wrUserBaseline: number; // WR baseline convertido a usuario
+    /** WR usuario de la MEJOR jugada del baseline (antes de mover el usuario) [0..1] */
+    bestWRPre: number;
+    /** WR usuario de la posición inmediatamente después de la jugada del usuario (lado al turno: bot) [0..1] */
+    wrAfterUser: number;
+    /** Delta firmado: bestWRPre - wrAfterUser (positivo = error, negativo = mejor que la recomendada) */
+    lossWinrate: number;
 
-      stmAfterUser: Color; // quién está al turno tras la jugada del usuario (bot)
-      wrSTMAfterUser?: number; // WR side-to-move reportado por KataGo (after user)
-      wrUserAfter: number; // WR after user convertido a usuario
+    /** Puntos (lead a favor del usuario) de la MEJOR jugada del baseline */
+    bestScorePre: number;
+    /** Puntos (lead a favor del usuario) tras la jugada del usuario */
+    scoreAfterUser: number;
+    /** Delta firmado: bestScorePre - scoreAfterUser (positivo = perdiste puntos vs la mejor) */
+    lossPoints: number;
+
+    debug?: {
+      stmBaseline: Color; // usuario
+      wrSTMBaseline?: number;
+      wrUserBaseline: number;
+
+      stmAfterUser: Color; // bot
+      wrSTMAfterUser?: number;
+      wrUserAfter: number;
     };
   };
-  ownership: number[]; // ÚNICO ownership crudo [-1..1] (361 vals) POSICIÓN REAL (post-bot)
-  state: {
-    moves: string[]; // historial KGS
-  };
+  ownership: number[];
+  state: { moves: string[] };
 }

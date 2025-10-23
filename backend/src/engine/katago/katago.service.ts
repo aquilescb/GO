@@ -17,24 +17,30 @@ type J = Record<string, any>;
 
 const clamp01 = (x: number) => (Number.isFinite(x) ? (x < 0 ? 0 : x > 1 ? 1 : x) : 0.5);
 const normalizeKGS = (s: string) => (s ?? '').trim().toUpperCase();
+
 function wr_forColor(wrSTM: number | undefined, sideToMove: Color, target: Color) {
   const w = typeof wrSTM === 'number' ? wrSTM : 0.5;
   return clamp01(sideToMove === target ? w : 1 - w);
 }
+
 function lead_forColor(whiteLead: number | undefined, color: Color) {
   const v = typeof whiteLead === 'number' ? whiteLead : 0;
   return color === 'w' ? v : -v;
 }
+
 function toUpperMove(m?: string): string {
   return (m ?? 'PASS').toUpperCase();
 }
+
 function takePV5(m?: KgMoveInfo): string[] {
   return (Array.isArray(m?.pv) ? m!.pv : []).slice(0, 5).map(toUpperMove);
 }
+
 function getMoveInfos(res: KgAnalysisRaw): KgMoveInfo[] {
   const arr = res?.rootInfo?.moveInfos ?? res?.root?.moveInfos ?? res?.moveInfos ?? [];
   return Array.isArray(arr) ? arr : [];
 }
+
 function sortByLeadForColor(moveInfos: KgMoveInfo[], color: Color): KgMoveInfo[] {
   return [...moveInfos]
     .map((mi) => ({ raw: mi, lead: lead_forColor(mi.scoreMean, color) }))
@@ -52,11 +58,8 @@ export class KatagoService implements OnModuleDestroy {
 
   private session: SessionData = { moves: [], nextColor: 'b' };
 
-  /** Reescribe CFG y reinicia el proceso con la red/preset/hardware actuales */
   applyConfigAndRestart(): void {
-    // 1) escribir CFG efectivo
     writeAnalysisCfg(AnalysisConfig);
-    // 2) reiniciar proceso
     this.stop();
     this.ensureRunning();
   }
@@ -127,14 +130,15 @@ export class KatagoService implements OnModuleDestroy {
     this.proc = undefined;
     this.rl = undefined;
   }
+
   onModuleDestroy() {
     this.stop();
   }
 
   warmup(): void {
-    // al hacer warmup garantizamos que existe el CFG correcto
     this.applyConfigAndRestart();
   }
+
   resetSession(): void {
     this.session = { moves: [], nextColor: 'b' };
   }
@@ -147,7 +151,6 @@ export class KatagoService implements OnModuleDestroy {
       boardYSize: AnalysisConfig.boardSize,
       moves,
       analyzeTurns: [moves.length],
-      // maxVisits ahora lo toma del .cfg generado
       includeOwnership: true,
       includePolicy: true,
     };
@@ -159,17 +162,58 @@ export class KatagoService implements OnModuleDestroy {
     const s = this.session;
     const userColor: Color = s.nextColor;
 
-    // 1) Baseline (usuario al turno)
+    // ========== PASO 1: BASELINE - Analizar ANTES de que juegue el usuario ==========
     const baselineRes = await this.analyzePosition(s.moves);
-    const baseBest = sortByLeadForColor(getMoveInfos(baselineRes), userColor)[0];
-    const bestWRPre_user = wr_forColor(baseBest?.winrate, userColor, userColor);
-    const bestScorePre_user = lead_forColor(baseBest?.scoreMean, userColor);
+    const baselineMoves = getMoveInfos(baselineRes);
+    const baseBest = sortByLeadForColor(baselineMoves, userColor)[0];
 
-    // 2) Aplico jugada usuario
+    // Mejor jugada según KataGo (desde perspectiva del usuario)
+    const bestWRPre = wr_forColor(baseBest?.winrate, userColor, userColor);
+    const bestScorePre = lead_forColor(baseBest?.scoreMean, userColor);
+
+    // ========== PASO 2: BUSCAR la jugada del usuario EN EL BASELINE ==========
     const userMove = normalizeKGS(userMoveRaw);
+    const userMoveInBaseline = baselineMoves.find(
+      (mi) => mi.move && normalizeKGS(mi.move) === userMove,
+    );
+
+    // Evaluación de la jugada del usuario EN EL BASELINE (mismo análisis que la mejor)
+    let userMoveWR: number;
+    let userMoveScore: number;
+
+    if (userMoveInBaseline) {
+      // ✅ La jugada está en el análisis baseline
+      userMoveWR = wr_forColor(userMoveInBaseline.winrate, userColor, userColor);
+      userMoveScore = lead_forColor(userMoveInBaseline.scoreMean, userColor);
+      this.log.debug(`✓ Jugada ${userMove} encontrada en baseline`);
+    } else {
+      // ⚠️ La jugada NO está en el baseline (muy mala o KataGo no la consideró)
+      // Tenemos que aplicarla y ver qué pasa
+      this.log.warn(`⚠️ Jugada ${userMove} NO encontrada en baseline - será muy mala`);
+
+      // Aplicamos temporalmente la jugada para evaluarla
+      const tempMoves = [...s.moves, [userColor, userMove]] as Array<[Color, string]>;
+      const tempRes = await this.analyzePosition(tempMoves);
+      const botColor: Color = userColor === 'b' ? 'w' : 'b';
+
+      // La mejor jugada del bot refleja qué tan buena fue nuestra jugada
+      const tempBestBot = sortByLeadForColor(getMoveInfos(tempRes), botColor)[0];
+
+      // Convertimos a perspectiva del usuario
+      userMoveWR = wr_forColor(tempBestBot?.winrate, botColor, userColor);
+      userMoveScore = lead_forColor(tempBestBot?.scoreMean, userColor);
+    }
+
+    // ========== CÁLCULO DEL DELTA ==========
+    // Ambos valores están desde la perspectiva del USUARIO
+    // Positivo = mejor jugada es superior
+    // Negativo = tu jugada es superior (raro pero posible)
+    const deltaWinrate = bestWRPre - userMoveWR;
+    const deltaScore = bestScorePre - Math.abs(userMoveScore);
+    // ========== PASO 3: APLICAR la jugada del usuario ==========
     s.moves.push([userColor, userMove]);
 
-    // 3) Bot al turno
+    // ========== PASO 4: BOT responde ==========
     const afterUserRes = await this.analyzePosition(s.moves);
     const botColor: Color = userColor === 'b' ? 'w' : 'b';
     s.nextColor = botColor;
@@ -178,17 +222,10 @@ export class KatagoService implements OnModuleDestroy {
     const bestBot = sortedForBot[0];
     const botMove = toUpperMove(bestBot?.move) || 'PASS';
 
-    const wrAfterUser_user = wr_forColor(bestBot?.winrate, botColor, userColor);
-    const scoreAfterUser_user = Math.abs(lead_forColor(bestBot?.scoreMean, userColor));
-
-    const lossWinrate = Math.abs(bestWRPre_user - wrAfterUser_user);
-    const lossPoints = Math.abs(bestScorePre_user - scoreAfterUser_user);
-
-    // 4) Mueve bot
     s.moves.push([botColor, botMove]);
     s.nextColor = userColor;
 
-    // 5) Recomendaciones usuario
+    // ========== PASO 5: Recomendaciones para el usuario ==========
     const nextRes = await this.analyzePosition(s.moves);
     const sortedForUserNext = sortByLeadForColor(getMoveInfos(nextRes), userColor);
 
@@ -215,16 +252,30 @@ export class KatagoService implements OnModuleDestroy {
       (Array.isArray(nextRes?.turns) ? nextRes.turns[0]?.ownership : undefined) ??
       [];
 
+    // 🔍 DEBUG
+    this.log.debug(`
+          === DELTA CALCULATION ===
+          Usuario: ${userColor} | Move: ${userMove}
+          
+          BASELINE (mismo análisis):
+          📊 Mejor jugada: WR=${(bestWRPre * 100).toFixed(2)}% | Score=${bestScorePre.toFixed(3)}
+          📊 Tu jugada:     WR=${(userMoveWR * 100).toFixed(2)}% | Score=${userMoveScore.toFixed(3)}
+          
+          ⚡ DELTA:
+          - Winrate: ${(deltaWinrate * 100).toFixed(2)}% ${deltaWinrate > 0 ? '(perdiste)' : '(ganaste)'}
+          - Score:   ${deltaScore.toFixed(3)} pts ${deltaScore > 0 ? '(perdiste)' : '(ganaste)'}
+        `);
+
     return {
       MovBot: { botMove, candidates: movBotCandidates },
       MovUser: { recommendations: movUserRecommendations },
       metrics: {
-        bestWRPre: bestWRPre_user,
-        wrAfterUser: wrAfterUser_user,
-        lossWinrate,
-        bestScorePre: bestScorePre_user,
-        scoreAfterUser: scoreAfterUser_user,
-        lossPoints,
+        bestWRPre: bestWRPre,
+        wrAfterUser: userMoveWR, // La evaluación de TU jugada en el baseline
+        lossWinrate: deltaWinrate,
+        bestScorePre: bestScorePre,
+        scoreAfterUser: userMoveScore, // La evaluación de TU jugada en el baseline
+        lossPoints: deltaScore,
       },
       ownership: ownershipFlat,
       state: { moves: s.moves.map(([, mv]) => mv) },
