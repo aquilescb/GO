@@ -33,7 +33,7 @@ function toUpperMove(m?: string): string {
 }
 
 function takePV5(m?: KgMoveInfo): string[] {
-  return (Array.isArray(m?.pv) ? m!.pv : []).slice(0, 5).map(toUpperMove);
+  return (Array.isArray(m?.pv) ? m.pv : []).slice(0, 5).map(toUpperMove);
 }
 
 function getMoveInfos(res: KgAnalysisRaw): KgMoveInfo[] {
@@ -159,17 +159,89 @@ export class KatagoService implements OnModuleDestroy {
 
   async playEvalV2(userMoveRaw: string): Promise<PlayEvalV2Response> {
     if (!userMoveRaw) throw new Error('Falta move');
+
     const s = this.session;
     const userColor: Color = s.nextColor;
+    const botColor: Color = userColor === 'b' ? 'w' : 'b';
+
+    // Helpers locales para leer root (distintos builds)
+    const rootWr = (r: KgAnalysisRaw) => r?.rootInfo?.winrate ?? r?.root?.winrate;
+    const rootLead = (r: KgAnalysisRaw) => {
+      const rr = r?.rootInfo ?? r?.root;
+      return rr?.scoreLead ?? rr?.scoreMean;
+    };
 
     // ========== PASO 1: BASELINE - Analizar ANTES de que juegue el usuario ==========
     const baselineRes = await this.analyzePosition(s.moves);
     const baselineMoves = getMoveInfos(baselineRes);
     const baseBest = sortByLeadForColor(baselineMoves, userColor)[0];
 
-    // Mejor jugada según KataGo (desde perspectiva del usuario)
-    const bestWRPre = wr_forColor(baseBest?.winrate, userColor, userColor);
-    const bestScorePre = lead_forColor(baseBest?.scoreMean, userColor);
+    // Guardas (posición terminal o sin candidatos)
+    if (!baseBest || !baseBest.move) {
+      const userMove = normalizeKGS(userMoveRaw) || 'PASS';
+      s.moves.push([userColor, userMove]);
+      s.nextColor = botColor;
+
+      const afterUserRes = await this.analyzePosition(s.moves);
+      const sortedForBot = sortByLeadForColor(getMoveInfos(afterUserRes), botColor);
+      const botMove = toUpperMove(sortedForBot[0]?.move) || 'PASS';
+
+      s.moves.push([botColor, botMove]);
+      s.nextColor = userColor;
+
+      const nextRes = await this.analyzePosition(s.moves);
+      const sortedForUserNext = sortByLeadForColor(getMoveInfos(nextRes), userColor);
+
+      const movUserRecommendations: CandidateBlackDTO[] = sortedForUserNext
+        .slice(0, 3)
+        .map((mi) => ({
+          move: toUpperMove(mi.move),
+          prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
+          // hijo => sideToMove es el oponente del usuario
+          winrateBlack: wr_forColor(mi.winrate, userColor === 'b' ? 'w' : 'b', userColor),
+          scoreMeanBlack: lead_forColor(mi.scoreMean, userColor),
+          pv: takePV5(mi),
+        }));
+
+      const movBotCandidates: CandidateBlackDTO[] = sortedForBot.slice(0, 3).map((mi) => ({
+        move: toUpperMove(mi.move),
+        prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
+        // hijo => sideToMove es el oponente del bot (usuario)
+        winrateBlack: wr_forColor(mi.winrate, botColor === 'b' ? 'w' : 'b', botColor),
+        scoreMeanBlack: lead_forColor(mi.scoreMean, botColor),
+        pv: takePV5(mi),
+      }));
+
+      const ownershipFlat =
+        nextRes?.rootInfo?.ownership ??
+        nextRes?.root?.ownership ??
+        nextRes?.ownership ??
+        (Array.isArray(nextRes?.turns) ? nextRes.turns[0]?.ownership : undefined) ??
+        [];
+
+      return {
+        MovBot: { botMove, candidates: movBotCandidates },
+        MovUser: { recommendations: movUserRecommendations },
+        metrics: {
+          bestWRPre: 0.5,
+          wrAfterUser: 0.5,
+          lossWinrate: 0,
+          bestScorePre: 0,
+          scoreAfterUser: 0,
+          lossPoints: 0,
+        },
+        ownership: ownershipFlat,
+        state: { moves: s.moves.map(([, mv]) => mv) },
+      };
+    }
+
+    // Mejor jugada del baseline (CHILD del root). OJO: en el hijo juega el BOT.
+    let bestWRPre = wr_forColor(
+      baseBest.winrate,
+      /*sideToMove child*/ botColor,
+      /*target*/ userColor,
+    );
+    let bestScorePre = lead_forColor(baseBest.scoreMean, userColor);
 
     // ========== PASO 2: BUSCAR la jugada del usuario EN EL BASELINE ==========
     const userMove = normalizeKGS(userMoveRaw);
@@ -177,47 +249,46 @@ export class KatagoService implements OnModuleDestroy {
       (mi) => mi.move && normalizeKGS(mi.move) === userMove,
     );
 
-    // Evaluación de la jugada del usuario EN EL BASELINE (mismo análisis que la mejor)
     let userMoveWR: number;
     let userMoveScore: number;
 
     if (userMoveInBaseline) {
-      // ✅ La jugada está en el análisis baseline
-      userMoveWR = wr_forColor(userMoveInBaseline.winrate, userColor, userColor);
+      // === CAMINO "HIT" === (child vs child, ambos del baseline)
+      userMoveWR = wr_forColor(userMoveInBaseline.winrate, /*child*/ botColor, userColor);
       userMoveScore = lead_forColor(userMoveInBaseline.scoreMean, userColor);
-      this.log.debug(`✓ Jugada ${userMove} encontrada en baseline`);
+      this.log.debug(`✓ Jugada ${userMove} encontrada en baseline (child vs child).`);
     } else {
-      // ⚠️ La jugada NO está en el baseline (muy mala o KataGo no la consideró)
-      // Tenemos que aplicarla y ver qué pasa
-      this.log.warn(`⚠️ Jugada ${userMove} NO encontrada en baseline - será muy mala`);
+      // === CAMINO "MISS" ===  (child-root vs child-root) ← Opción A
+      this.log.warn(`⚠️ Jugada ${userMove} NO en baseline — aplicando child-root vs child-root.`);
 
-      // Aplicamos temporalmente la jugada para evaluarla
-      const tempMoves = [...s.moves, [userColor, userMove]] as Array<[Color, string]>;
-      const tempRes = await this.analyzePosition(tempMoves);
-      const botColor: Color = userColor === 'b' ? 'w' : 'b';
+      // A) Forzar BEST del baseline como hijo y leer ROOT del hijo
+      const bestMoveForced = toUpperMove(baseBest.move);
+      const tempBestMoves = [...s.moves, [userColor, bestMoveForced]] as Array<[Color, string]>;
+      const tempBestRes = await this.analyzePosition(tempBestMoves);
+      const rootWrBest = rootWr(tempBestRes);
+      const rootLeadBest = rootLead(tempBestRes);
+      bestWRPre = wr_forColor(rootWrBest, /*sideToMove child*/ botColor, userColor);
+      bestScorePre = lead_forColor(rootLeadBest, userColor);
 
-      // La mejor jugada del bot refleja qué tan buena fue nuestra jugada
-      const tempBestBot = sortByLeadForColor(getMoveInfos(tempRes), botColor)[0];
-
-      // Convertimos a perspectiva del usuario
-      userMoveWR = wr_forColor(tempBestBot?.winrate, botColor, userColor);
-      userMoveScore = lead_forColor(tempBestBot?.scoreMean, userColor);
+      // B) Forzar USER move como hijo y leer ROOT del hijo
+      const tempUserMoves = [...s.moves, [userColor, userMove]] as Array<[Color, string]>;
+      const tempUserRes = await this.analyzePosition(tempUserMoves);
+      const rootWrUser = rootWr(tempUserRes);
+      const rootLeadUser = rootLead(tempUserRes);
+      userMoveWR = wr_forColor(rootWrUser, /*sideToMove child*/ botColor, userColor);
+      userMoveScore = lead_forColor(rootLeadUser, userColor);
     }
 
-    // ========== CÁLCULO DEL DELTA ==========
-    // Ambos valores están desde la perspectiva del USUARIO
-    // Positivo = mejor jugada es superior
-    // Negativo = tu jugada es superior (raro pero posible)
-    const deltaWinrate = bestWRPre - userMoveWR;
-    const deltaScore = bestScorePre - Math.abs(userMoveScore);
-    // ========== PASO 3: APLICAR la jugada del usuario ==========
+    // ========== PASO 3: DELTA (signados, sin umbrales) ==========
+    const deltaWinrate = bestWRPre - userMoveWR; // >0 = tu jugada peor que la mejor
+    const deltaScore = bestScorePre - userMoveScore;
+
+    // ========== PASO 4: APLICAR la jugada del usuario ==========
     s.moves.push([userColor, userMove]);
 
-    // ========== PASO 4: BOT responde ==========
+    // ========== PASO 5: BOT responde ==========
     const afterUserRes = await this.analyzePosition(s.moves);
-    const botColor: Color = userColor === 'b' ? 'w' : 'b';
     s.nextColor = botColor;
-
     const sortedForBot = sortByLeadForColor(getMoveInfos(afterUserRes), botColor);
     const bestBot = sortedForBot[0];
     const botMove = toUpperMove(bestBot?.move) || 'PASS';
@@ -225,14 +296,15 @@ export class KatagoService implements OnModuleDestroy {
     s.moves.push([botColor, botMove]);
     s.nextColor = userColor;
 
-    // ========== PASO 5: Recomendaciones para el usuario ==========
+    // ========== PASO 6: Recomendaciones para el usuario ==========
     const nextRes = await this.analyzePosition(s.moves);
     const sortedForUserNext = sortByLeadForColor(getMoveInfos(nextRes), userColor);
 
     const movUserRecommendations: CandidateBlackDTO[] = sortedForUserNext.slice(0, 3).map((mi) => ({
       move: toUpperMove(mi.move),
       prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
-      winrateBlack: wr_forColor(mi.winrate, userColor, userColor),
+      // hijo => sideToMove es el oponente
+      winrateBlack: wr_forColor(mi.winrate, userColor === 'b' ? 'w' : 'b', userColor),
       scoreMeanBlack: lead_forColor(mi.scoreMean, userColor),
       pv: takePV5(mi),
     }));
@@ -240,7 +312,8 @@ export class KatagoService implements OnModuleDestroy {
     const movBotCandidates: CandidateBlackDTO[] = sortedForBot.slice(0, 3).map((mi) => ({
       move: toUpperMove(mi.move),
       prior: typeof mi.prior === 'number' ? mi.prior : (mi.policy ?? 0) || 0,
-      winrateBlack: wr_forColor(mi.winrate, botColor, botColor),
+      // hijo => sideToMove es el oponente del bot (usuario)
+      winrateBlack: wr_forColor(mi.winrate, botColor === 'b' ? 'w' : 'b', botColor),
       scoreMeanBlack: lead_forColor(mi.scoreMean, botColor),
       pv: takePV5(mi),
     }));
@@ -254,27 +327,22 @@ export class KatagoService implements OnModuleDestroy {
 
     // 🔍 DEBUG
     this.log.debug(`
-          === DELTA CALCULATION ===
-          Usuario: ${userColor} | Move: ${userMove}
-          
-          BASELINE (mismo análisis):
-          📊 Mejor jugada: WR=${(bestWRPre * 100).toFixed(2)}% | Score=${bestScorePre.toFixed(3)}
-          📊 Tu jugada:     WR=${(userMoveWR * 100).toFixed(2)}% | Score=${userMoveScore.toFixed(3)}
-          
-          ⚡ DELTA:
-          - Winrate: ${(deltaWinrate * 100).toFixed(2)}% ${deltaWinrate > 0 ? '(perdiste)' : '(ganaste)'}
-          - Score:   ${deltaScore.toFixed(3)} pts ${deltaScore > 0 ? '(perdiste)' : '(ganaste)'}
-        `);
+=== DELTA 1-ply ===  User=${userColor} Move=${userMove}
+BestRef: WR=${(bestWRPre * 100).toFixed(2)}%  Pts=${bestScorePre.toFixed(3)}
+UserRef: WR=${(userMoveWR * 100).toFixed(2)}%  Pts=${userMoveScore.toFixed(3)}
+ΔWR=${(deltaWinrate * 100).toFixed(2)}%  ΔPts=${deltaScore.toFixed(3)}
+BotMove=${botMove}
+  `);
 
     return {
       MovBot: { botMove, candidates: movBotCandidates },
       MovUser: { recommendations: movUserRecommendations },
       metrics: {
         bestWRPre: bestWRPre,
-        wrAfterUser: userMoveWR, // La evaluación de TU jugada en el baseline
+        wrAfterUser: userMoveWR,
         lossWinrate: deltaWinrate,
         bestScorePre: bestScorePre,
-        scoreAfterUser: userMoveScore, // La evaluación de TU jugada en el baseline
+        scoreAfterUser: userMoveScore,
         lossPoints: deltaScore,
       },
       ownership: ownershipFlat,

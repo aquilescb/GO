@@ -5,18 +5,33 @@ export interface KgMoveInfo {
   move?: string;
   prior?: number;
   policy?: number;
-  winrate?: number; // con tu CFG: prob. de ganar del lado al turno (SIDE-TO-MOVE)
-  scoreMean?: number; // white lead (puntos a favor de blancas)
-  pv?: string[]; // Principal variation (máx 5)
+  /** Prob. de ganar del lado-al-turno en el HIJO (0..1). */
+  winrate?: number;
+  /** Lead a favor de blancas en el HIJO (pts). */
+  scoreMean?: number;
+  pv?: string[];
 }
 
 export interface KgTurnInfo {
-  ownership?: number[]; // Propiedad de las celdas en el tablero
+  ownership?: number[];
+}
+
+/** Nodo tipo root que pueden devolver distintos builds */
+export interface KgRootLike {
+  moveInfos?: KgMoveInfo[];
+  ownership?: number[];
+
+  /** Prob. de ganar del lado-al-turno en este nodo (0..1). */
+  winrate?: number;
+
+  /** Lead a favor de BLANCAS (algunos builds: scoreLead, otros: scoreMean). */
+  scoreLead?: number;
+  scoreMean?: number;
 }
 
 export interface KgAnalysisRaw {
-  rootInfo?: { moveInfos?: KgMoveInfo[]; ownership?: number[] };
-  root?: { moveInfos?: KgMoveInfo[]; ownership?: number[] };
+  rootInfo?: KgRootLike;
+  root?: KgRootLike;
   moveInfos?: KgMoveInfo[];
   ownership?: number[];
   turns?: KgTurnInfo[];
@@ -26,14 +41,14 @@ export interface KgAnalysisRaw {
 export interface CandidateBlackDTO {
   move: string;
   prior: number;
-  winrateBlack: number; // prob. de ganar NEGRAS tras ese movimiento (0..1)
-  scoreMeanBlack: number; // puntos a favor de NEGRAS
-  pv: string[]; // largo 5
+  winrateBlack: number; // 0..1 (desde el usuario)
+  scoreMeanBlack: number; // pts (desde el usuario)
+  pv: string[];
 }
 
 export interface SessionData {
-  moves: Array<[Color, string]>; // Registro de jugadas (Color, Jugada)
-  nextColor: Color; // Siguiente turno: 'b' o 'w'
+  moves: Array<[Color, string]>;
+  nextColor: Color;
 }
 
 export interface PlayEvalV2Response {
@@ -45,26 +60,25 @@ export interface PlayEvalV2Response {
     recommendations: CandidateBlackDTO[];
   };
   metrics: {
-    /** WR usuario de la MEJOR jugada del baseline (antes de mover el usuario) [0..1] */
     bestWRPre: number;
-    /** WR usuario de la posición inmediatamente después de la jugada del usuario (lado al turno: bot) [0..1] */
     wrAfterUser: number;
-    /** Delta firmado: bestWRPre - wrAfterUser (positivo = error, negativo = mejor que la recomendada) */
     lossWinrate: number;
 
-    /** Puntos (lead a favor del usuario) de la MEJOR jugada del baseline */
     bestScorePre: number;
-    /** Puntos (lead a favor del usuario) tras la jugada del usuario */
     scoreAfterUser: number;
-    /** Delta firmado: bestScorePre - scoreAfterUser (positivo = perdiste puntos vs la mejor) */
     lossPoints: number;
 
+    /** === Nuevos campos para frontend === */
+    absLossWinrate?: number;
+    absLossPoints?: number;
+    isImprovement?: boolean;
+
     debug?: {
-      stmBaseline: Color; // usuario
+      stmBaseline: Color;
       wrSTMBaseline?: number;
       wrUserBaseline: number;
 
-      stmAfterUser: Color; // bot
+      stmAfterUser: Color;
       wrSTMAfterUser?: number;
       wrUserAfter: number;
     };

@@ -182,28 +182,48 @@ export default function GamePage() {
                         </h4>
 
                         <div className="grid sm:grid-cols-2 gap-3">
-                           {/* Delta Puntos */}
+                           {/* Delta Puntos (abs en grande + leyenda por signo) */}
                            <MetricBlock
                               title="Delta Puntos"
-                              value={formatFixed3(metrics.lossPoints)}
-                              ok={Math.abs(metrics.lossPoints) <= 1.5}
+                              value={formatFixed3(Math.abs(metrics.lossPoints))}
+                              ok={metrics.lossPoints <= 0.5} // umbral leve
                               desc={
-                                 <RowKV
-                                    k="Mejor / Tu jugada"
-                                    v={`${formatFixed3(
-                                       metrics.bestScorePre
-                                    )} / ${formatFixed3(
-                                       metrics.scoreAfterUser
-                                    )}`}
-                                 />
+                                 <>
+                                    <RowKV
+                                       k="Mejor / Tu jugada"
+                                       v={`${formatFixed3(
+                                          metrics.bestScorePre
+                                       )} / ${formatFixed3(
+                                          metrics.scoreAfterUser
+                                       )}`}
+                                    />
+                                    {metrics.lossPoints > 0 ? (
+                                       <div className="mt-2 text-red-300">
+                                          Perdiste{" "}
+                                          {formatFixed3(metrics.lossPoints)} pts
+                                       </div>
+                                    ) : metrics.lossPoints < 0 ? (
+                                       <div className="mt-2 text-green-300">
+                                          Ganaste{" "}
+                                          {formatFixed3(-metrics.lossPoints)}{" "}
+                                          pts
+                                       </div>
+                                    ) : (
+                                       <div className="mt-2 opacity-70">
+                                          Sin diferencia
+                                       </div>
+                                    )}
+                                 </>
                               }
                            />
 
-                           {/* Delta Winrate */}
+                           {/* Delta Winrate (abs en grande + leyenda por signo) */}
                            <MetricBlock
                               title="Delta Winrate"
                               value={
-                                 (metrics.lossWinrate * 100).toFixed(2) + "%"
+                                 (Math.abs(metrics.lossWinrate) * 100).toFixed(
+                                    2
+                                 ) + "%"
                               }
                               ok={metrics.lossWinrate <= 0}
                               desc={
@@ -218,19 +238,23 @@ export default function GamePage() {
                                     />
                                     {metrics.lossWinrate > 0 ? (
                                        <div className="mt-2 text-red-300">
-                                          Perdiste Winrate (
-                                          {(
-                                             Math.abs(metrics.lossWinrate) * 100
-                                          ).toFixed(2)}
-                                          %)
+                                          Perdiste{" "}
+                                          {(metrics.lossWinrate * 100).toFixed(
+                                             2
+                                          )}
+                                          %
+                                       </div>
+                                    ) : metrics.lossWinrate < 0 ? (
+                                       <div className="mt-2 text-green-300">
+                                          Ganaste{" "}
+                                          {(-metrics.lossWinrate * 100).toFixed(
+                                             2
+                                          )}
+                                          %
                                        </div>
                                     ) : (
-                                       <div className="mt-2 text-green-300">
-                                          Ganaste Winrate (
-                                          {(
-                                             Math.abs(metrics.lossWinrate) * 100
-                                          ).toFixed(2)}
-                                          %)
+                                       <div className="mt-2 opacity-70">
+                                          Sin diferencia
                                        </div>
                                     )}
                                  </>
