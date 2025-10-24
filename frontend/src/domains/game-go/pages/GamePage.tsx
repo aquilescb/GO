@@ -186,7 +186,6 @@ export default function GamePage() {
                            <MetricBlock
                               title="Delta Puntos"
                               value={formatFixed3(Math.abs(metrics.lossPoints))}
-                              ok={metrics.lossPoints <= 0.5} // umbral leve
                               desc={
                                  <>
                                     <RowKV
@@ -263,41 +262,6 @@ export default function GamePage() {
                         </div>
                      </div>
                   )}
-                  {/* BOT */}
-                  {movBot && (
-                     <Block title="Datos del Movimiento del KataGo (Bot)">
-                        <MiniGrid
-                           list={[
-                              ["Bot Best Move", movBot.botMove ?? "—"],
-                              [
-                                 "Winrate",
-                                 movBot.candidates?.[0]
-                                    ? `${(
-                                         movBot.candidates[0].winrateBlack * 100
-                                      ).toFixed(2)}%`
-                                    : "—",
-                              ],
-                              [
-                                 "Score",
-                                 movBot.candidates?.[0]
-                                    ? formatFixed3(
-                                         movBot.candidates[0].scoreMeanBlack
-                                      )
-                                    : "—",
-                              ],
-                           ]}
-                        />
-                        <PV
-                           label="PV (Best)"
-                           pv={movBot.candidates?.[0]?.pv ?? []}
-                        />
-                        <CandidatesTable
-                           rows={movBot.candidates ?? []}
-                           title="Candidatas del Bot (top-3)"
-                        />
-                     </Block>
-                  )}
-
                   {movUser && (
                      <Block title="Consejos para el Usuario (próximo turno)">
                         <MiniGrid
@@ -333,6 +297,40 @@ export default function GamePage() {
                         <CandidatesTable
                            rows={movUser.recommendations ?? []}
                            title="Recomendaciones para el Usuario (top-3)"
+                        />
+                     </Block>
+                  )}
+                  {/* BOT */}
+                  {movBot && (
+                     <Block title="Datos del Movimiento del KataGo (Bot)">
+                        <MiniGrid
+                           list={[
+                              ["Bot Best Move", movBot.botMove ?? "—"],
+                              [
+                                 "Winrate",
+                                 movBot.candidates?.[0]
+                                    ? `${(
+                                         movBot.candidates[0].winrateBlack * 100
+                                      ).toFixed(2)}%`
+                                    : "—",
+                              ],
+                              [
+                                 "Score",
+                                 movBot.candidates?.[0]
+                                    ? formatFixed3(
+                                         movBot.candidates[0].scoreMeanBlack
+                                      )
+                                    : "—",
+                              ],
+                           ]}
+                        />
+                        <PV
+                           label="PV (Best)"
+                           pv={movBot.candidates?.[0]?.pv ?? []}
+                        />
+                        <CandidatesTable
+                           rows={movBot.candidates ?? []}
+                           title="Candidatas del Bot (top-3)"
                         />
                      </Block>
                   )}

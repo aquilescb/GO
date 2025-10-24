@@ -12,18 +12,16 @@ async function http<T>(path: string, init?: RequestInit): Promise<T> {
       headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
       ...init,
    });
-   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-   let data: any = null;
+   let data = null;
    try {
       data = await res.json();
    } catch {
-      /* no-op */
+      /* empty */
    }
-   if (!res.ok) {
+   if (!res.ok)
       throw new Error(
          String(data?.error || data?.message || `HTTP ${res.status}`)
       );
-   }
    return data as T;
 }
 
@@ -39,9 +37,22 @@ export type EngineConfig = {
    boardSize: number;
    komi: number;
    rules: string;
+   // puede venir con overrides activos
+   overrides?: {
+      maxVisits?: number;
+      selectionTemperature?: number;
+      numSearchThreads?: number;
+      analysisPVLen?: number;
+      wideRootNoise?: number;
+   };
 };
 
-/* ===== Endpoints existentes ===== */
+export type RuntimeOverrides = Partial<NonNullable<EngineConfig["overrides"]>>;
+
+export type NetworkEntry = { filename: string; fullpath: string };
+export type NetworksResponse = { dir: string; files: NetworkEntry[] };
+
+/* ===== Game ===== */
 export function startGame() {
    return http<{ status: "ok"; message: string }>("/game/start", {
       method: "POST",
@@ -61,15 +72,14 @@ export function playEval(move: string): Promise<PlayEvalV2Response> {
    });
 }
 
-/* ===== Nueva API de configuración ===== */
+/* ===== Config ===== */
 export function getKataConfig() {
    return http<EngineConfig>("/game/config", { method: "GET" });
 }
-
 export function applyKataConfig(body: {
    preset?: Preset;
    hardware?: Hardware;
-   networkFilename?: string; // p.ej. "kata1-b15c192-....txt.gz"
+   networkFilename?: string;
 }) {
    return http<{ status: "ok"; applied: EngineConfig }>("/game/config/apply", {
       method: "POST",
@@ -77,7 +87,18 @@ export function applyKataConfig(body: {
    });
 }
 
-/* (Opcional) listar modelos si exponés un endpoint /game/networks */
-export function listNetworks() {
-   return http<{ files: string[] }>("/game/networks", { method: "GET" });
+/* ===== NUEVO: listar redes ===== */
+export function getKataNetworks() {
+   return http<NetworksResponse>("/game/networks", { method: "GET" });
+}
+
+/* ===== NUEVO: overrides (maxVisits, temperatura, etc.) ===== */
+export function overrideKataConfig(overrides: RuntimeOverrides) {
+   return http<{ status: "ok"; overrides: EngineConfig["overrides"] }>(
+      "/game/config/override",
+      {
+         method: "POST",
+         body: JSON.stringify(overrides),
+      }
+   );
 }
