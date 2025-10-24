@@ -327,12 +327,12 @@ export class KatagoService implements OnModuleDestroy {
 
     // 🔍 DEBUG
     this.log.debug(`
-=== DELTA 1-ply ===  User=${userColor} Move=${userMove}
-BestRef: WR=${(bestWRPre * 100).toFixed(2)}%  Pts=${bestScorePre.toFixed(3)}
-UserRef: WR=${(userMoveWR * 100).toFixed(2)}%  Pts=${userMoveScore.toFixed(3)}
-ΔWR=${(deltaWinrate * 100).toFixed(2)}%  ΔPts=${deltaScore.toFixed(3)}
-BotMove=${botMove}
-  `);
+    === DELTA 1-ply ===  User=${userColor} Move=${userMove}
+    BestRef: WR=${(bestWRPre * 100).toFixed(2)}%  Pts=${bestScorePre.toFixed(3)}
+    UserRef: WR=${(userMoveWR * 100).toFixed(2)}%  Pts=${userMoveScore.toFixed(3)}
+    ΔWR=${(deltaWinrate * 100).toFixed(2)}%  ΔPts=${deltaScore.toFixed(3)}
+    BotMove=${botMove}
+      `);
 
     return {
       MovBot: { botMove, candidates: movBotCandidates },

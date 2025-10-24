@@ -1,9 +1,18 @@
 // src/engine/katago/runtime-config.ts
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 export type HardwareProfile = 'cpu-low' | 'cpu-mid' | 'gpu';
 export type DifficultyPreset = 'easy' | 'medium' | 'hard' | 'pro';
+
+export type RuntimeOverrides = Partial<{
+  maxVisits: number;
+  selectionTemperature: number; // <<< NUEVO: temperatura para elegir jugada del bot
+  numSearchThreads: number; // override manual (por defecto AUTO)
+  analysisPVLen: number;
+  wideRootNoise: number;
+}>;
 
 export type RuntimeConfig = {
   boardSize: number;
@@ -11,15 +20,15 @@ export type RuntimeConfig = {
   rules: 'chinese' | 'japanese';
   katagoExePath: string;
   networksDir: string;
-  networkFilename: string; // archivo dentro de networksDir
-  generatedCfgPath: string; // dónde escribimos el analysis_web.cfg
-  // Mezcla efectiva
+  networkFilename: string;
+  generatedCfgPath: string;
   hardware: HardwareProfile;
   preset: DifficultyPreset;
+  overrides?: RuntimeOverrides; // <<< NUEVO
 };
 
 export type KataEffective = {
-  // parámetros efectivos que van al INI (analysis_web.cfg)
+  // van al analysis_web.cfg
   numAnalysisThreads: number;
   numSearchThreads: number;
   nnCacheSizePowerOfTwo: number;
@@ -33,24 +42,15 @@ export type KataEffective = {
   reportAnalysisWinratesAs: 'SIDETOMOVE';
   allowIncludeOwnership: boolean;
   allowIncludePolicy: boolean;
+
+  // sólo backend (no va al cfg)
+  selectionTemperature: number; // <<< NUEVO
 };
 
-const HW: Record<
-  HardwareProfile,
-  Omit<
-    KataEffective,
-    | 'maxVisits'
-    | 'analysisPVLen'
-    | 'wideRootNoise'
-    | 'ignorePreRootHistory'
-    | 'reportAnalysisWinratesAs'
-    | 'allowIncludeOwnership'
-    | 'allowIncludePolicy'
-  >
-> = {
+const HW_BASE = {
   'cpu-low': {
     numAnalysisThreads: 1,
-    numSearchThreads: 1,
+    // numSearchThreads: AUTO (abajo)
     nnCacheSizePowerOfTwo: 20,
     nnMutexPoolSizePowerOfTwo: 17,
     nnMaxBatchSize: 4,
@@ -58,7 +58,6 @@ const HW: Record<
   },
   'cpu-mid': {
     numAnalysisThreads: 1,
-    numSearchThreads: 8,
     nnCacheSizePowerOfTwo: 21,
     nnMutexPoolSizePowerOfTwo: 18,
     nnMaxBatchSize: 8,
@@ -66,44 +65,63 @@ const HW: Record<
   },
   gpu: {
     numAnalysisThreads: 1,
-    numSearchThreads: 12,
     nnCacheSizePowerOfTwo: 22,
     nnMutexPoolSizePowerOfTwo: 18,
     nnMaxBatchSize: 32,
     lagBuffer: 0.03,
   },
-};
+} as const;
 
-const PRESET: Record<
-  DifficultyPreset,
-  Pick<KataEffective, 'maxVisits' | 'analysisPVLen' | 'wideRootNoise'>
-> = {
-  easy: { maxVisits: 60, analysisPVLen: 5, wideRootNoise: 0.05 },
-  medium: { maxVisits: 120, analysisPVLen: 6, wideRootNoise: 0.04 },
-  hard: { maxVisits: 400, analysisPVLen: 6, wideRootNoise: 0.02 },
-  pro: { maxVisits: 1000, analysisPVLen: 7, wideRootNoise: 0.01 },
-};
+const PRESET = {
+  easy: { maxVisits: 60, analysisPVLen: 5, wideRootNoise: 0.05, temp: 0.8 },
+  medium: { maxVisits: 120, analysisPVLen: 6, wideRootNoise: 0.04, temp: 0.5 },
+  hard: { maxVisits: 400, analysisPVLen: 6, wideRootNoise: 0.02, temp: 0.15 },
+  pro: { maxVisits: 1000, analysisPVLen: 7, wideRootNoise: 0.01, temp: 0.05 },
+} as const;
 
 export function resolveEffective(rc: RuntimeConfig): KataEffective {
-  const hw = HW[rc.hardware];
+  const hw = HW_BASE[rc.hardware];
   const p = PRESET[rc.preset];
-  return {
-    ...hw,
-    ...p,
+
+  // Threads AUTO para cpu-low (y default en general)
+  const autoThreads = Math.max(1, Math.min(8, (os.cpus()?.length ?? 2) - 1));
+
+  const eff: KataEffective = {
+    numAnalysisThreads: hw.numAnalysisThreads,
+    numSearchThreads: autoThreads,
+    nnCacheSizePowerOfTwo: hw.nnCacheSizePowerOfTwo,
+    nnMutexPoolSizePowerOfTwo: hw.nnMutexPoolSizePowerOfTwo,
+    nnMaxBatchSize: hw.nnMaxBatchSize,
+    lagBuffer: hw.lagBuffer,
+
+    maxVisits: p.maxVisits,
+    analysisPVLen: p.analysisPVLen,
+    wideRootNoise: p.wideRootNoise,
+
     ignorePreRootHistory: true,
     reportAnalysisWinratesAs: 'SIDETOMOVE',
     allowIncludeOwnership: true,
     allowIncludePolicy: true,
+
+    selectionTemperature: p.temp,
   };
+
+  // Overrides
+  const ov = rc.overrides ?? {};
+  if (typeof ov.maxVisits === 'number') eff.maxVisits = ov.maxVisits;
+  if (typeof ov.analysisPVLen === 'number') eff.analysisPVLen = ov.analysisPVLen;
+  if (typeof ov.wideRootNoise === 'number') eff.wideRootNoise = ov.wideRootNoise;
+  if (typeof ov.numSearchThreads === 'number') eff.numSearchThreads = ov.numSearchThreads;
+  if (typeof ov.selectionTemperature === 'number')
+    eff.selectionTemperature = ov.selectionTemperature;
+
+  return eff;
 }
 
-// Escribe un analysis_web.cfg con base + mezcla efectiva
+// Escribe el analysis_web.cfg
 export function writeAnalysisCfg(rc: RuntimeConfig): void {
   const eff = resolveEffective(rc);
-  const lines: string[] = [];
-
-  // ===== Reglas / tamaño =====
-  lines.push(
+  const lines: string[] = [
     `maxBoardXSizeForNNBuffer = ${rc.boardSize}`,
     `maxBoardYSizeForNNBuffer = ${rc.boardSize}`,
     `requireMaxBoardSize = true`,
@@ -130,7 +148,7 @@ export function writeAnalysisCfg(rc: RuntimeConfig): void {
     `allowIncludeOwnership = ${eff.allowIncludeOwnership}`,
     `allowIncludePolicy = ${eff.allowIncludePolicy}`,
     ``,
-  );
+  ];
 
   fs.writeFileSync(rc.generatedCfgPath, lines.join('\n'), 'utf8');
 }

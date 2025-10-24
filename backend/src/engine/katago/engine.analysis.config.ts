@@ -9,8 +9,9 @@ export const AnalysisConfig: RuntimeConfig = {
   networksDir: process.env.KATAGO_NETWORKS_DIR ?? 'engines/katago/networks',
   networkFilename: process.env.KATAGO_NETWORK_FILE ?? 'kata1-b15c192-s1672170752-d466197061.txt.gz',
   generatedCfgPath: process.env.KATAGO_CFG_PATH ?? 'engines/katago/analysis_web.cfg',
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   hardware: (process.env.KATAGO_HW as any) ?? 'cpu-low',
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
   preset: (process.env.KATAGO_PRESET as any) ?? 'medium',
+
+  // <<< NUEVO: overrides vacíos por defecto
+  overrides: {},
 };
