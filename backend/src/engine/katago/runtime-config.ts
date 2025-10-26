@@ -117,16 +117,25 @@ export function resolveEffective(rc: RuntimeConfig): KataEffective {
 
   return eff;
 }
-
+function exists(p: string) {
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
 // Escribe el analysis_web.cfg
-export function writeAnalysisCfg(rc: RuntimeConfig): void {
+export function writeAnalysisCfg(
+  rc: RuntimeConfig & {
+    humanSLProfile?: string;
+  },
+) {
   const eff = resolveEffective(rc);
   const lines: string[] = [
     `maxBoardXSizeForNNBuffer = ${rc.boardSize}`,
     `maxBoardYSizeForNNBuffer = ${rc.boardSize}`,
     `requireMaxBoardSize = true`,
-    `komi = ${rc.komi}`,
-    `rules = ${rc.rules}`,
+    // OJO: komi/rules se pasan en la request JSON → no ponerlos para evitar "Unused key"
     ``,
     `# ===== Rendimiento =====`,
     `numAnalysisThreads = ${eff.numAnalysisThreads}`,
@@ -142,17 +151,59 @@ export function writeAnalysisCfg(rc: RuntimeConfig): void {
     `# ===== Reporte =====`,
     `reportAnalysisWinratesAs = ${eff.reportAnalysisWinratesAs}`,
     `logToStderr = true`,
-    `logAllMoves = false`,
-    `logSearchInfo = false`,
-    ``,
-    `allowIncludeOwnership = ${eff.allowIncludeOwnership}`,
-    `allowIncludePolicy = ${eff.allowIncludePolicy}`,
     ``,
   ];
+
+  // Si vas a usar -human-model, KataGo requiere el perfil:
+  if (rc.humanSLProfile) {
+    lines.push(`# ===== Human SL =====`);
+    lines.push(`humanSLProfile = ${rc.humanSLProfile}`);
+    lines.push(``);
+  }
 
   fs.writeFileSync(rc.generatedCfgPath, lines.join('\n'), 'utf8');
 }
 
+export function resolveModelAbsolutePath(
+  networksDir: string,
+  networkFilename: string,
+): {
+  path: string;
+  format: 'bin' | 'txt';
+} {
+  // 1) Si viene ruta absoluta válida, usar tal cual
+  if (path.isAbsolute(networkFilename) && exists(networkFilename)) {
+    const fmt = networkFilename.endsWith('.bin.gz') ? 'bin' : 'txt';
+    return { path: networkFilename, format: fmt };
+  }
+
+  // 2) Candidatos dentro de networksDir
+  const hasExt = /\.((bin|txt)\.gz)$/i.test(networkFilename);
+  const candidates: Array<{ p: string; fmt: 'bin' | 'txt' }> = [];
+
+  if (hasExt) {
+    const p = path.join(networksDir, networkFilename);
+    const fmt = networkFilename.toLowerCase().endsWith('.bin.gz') ? 'bin' : 'txt';
+    candidates.push({ p, fmt });
+  } else {
+    // Sin extensión: preferir formato nuevo y luego antiguo
+    candidates.push({ p: path.join(networksDir, `${networkFilename}.bin.gz`), fmt: 'bin' });
+    candidates.push({ p: path.join(networksDir, `${networkFilename}.txt.gz`), fmt: 'txt' });
+  }
+
+  for (const c of candidates) {
+    if (exists(c.p)) return { path: c.p, format: c.fmt };
+  }
+
+  // 3) Mensaje claro si no se encontró nada
+  const tried = candidates.map((c) => c.p).join('\n  - ');
+  throw new Error(
+    `No se encontró el modelo de red. Intentos:\n  - ${tried}\n` +
+      `Verificá networksDir="${networksDir}" y networkFilename="${networkFilename}".`,
+  );
+}
+
+/** Compat de firma vieja (por si la usás en otros lados). */
 export function modelAbsolutePath(rc: RuntimeConfig): string {
-  return path.join(rc.networksDir, rc.networkFilename);
+  return resolveModelAbsolutePath(rc.networksDir, rc.networkFilename).path;
 }

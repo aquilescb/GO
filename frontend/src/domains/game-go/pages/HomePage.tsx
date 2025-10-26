@@ -53,11 +53,21 @@ export default function HomePage() {
 
             const list = await getKataNetworks();
             setNetworks(list.files);
-            // si el actual existe en la carpeta, dejarlo seleccionado
-            if (list.files.some((f) => f.filename === cfg.networkFilename)) {
+
+            // 👇 preferimos SIEMPRE el modo "known" si hay redes
+            if (list.files.length > 0) {
+               const match = pickNetMatch(list.files, cfg.networkFilename);
+
                setNetMode("known");
-               setSelectedNet(cfg.networkFilename);
+               if (match) {
+                  // si matchea por filename o baseName, seleccionamos su filename
+                  setSelectedNet(match.filename);
+               } else {
+                  // sin match: dejamos el select sin elegir
+                  setSelectedNet("");
+               }
             } else {
+               // no hay archivos en disco -> permitir custom
                setNetMode("custom");
                setCustomNet(cfg.networkFilename ?? "");
             }
@@ -171,13 +181,13 @@ export default function HomePage() {
                      <Input
                         value={customNet}
                         setValue={setCustomNet}
-                        placeholder="kata1-b15c192-....txt.gz"
+                        placeholder="kata1-b15c192-… (.bin.gz o .txt.gz)"
                      />
                   )}
                   <p className="text-xs opacity-70 mt-2">
                      {networks.length
                         ? `Encontradas: ${networks.length}`
-                        : "No se detectaron archivos .txt.gz"}
+                        : "No se detectaron modelos (.bin.gz o .txt.gz)"}
                   </p>
                </Card>
             </section>
@@ -304,4 +314,12 @@ function LabeledInput(
          />
       </label>
    );
+}
+function pickNetMatch(
+   files: NetworkEntry[],
+   cfgName: string | undefined | null
+): NetworkEntry | undefined {
+   if (!cfgName) return undefined;
+   const name = cfgName.trim();
+   return files.find((f) => f.filename === name || f.baseName === name);
 }

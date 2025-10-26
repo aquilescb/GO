@@ -5,11 +5,13 @@ import * as path from 'path';
 import { KatagoService } from '../engine/katago/katago.service';
 import { AnalysisConfig } from '../engine/katago/engine.analysis.config';
 import type { PlayEvalV2Response } from '../engine/engine.types';
-import type {
+import {
+  resolveModelAbsolutePath,
   DifficultyPreset,
   HardwareProfile,
   RuntimeOverrides,
 } from '../engine/katago/runtime-config';
+type ResolvedModel = { path: string; format: 'bin' | 'txt' };
 
 @Controller('game')
 export class EngineController {
@@ -36,17 +38,65 @@ export class EngineController {
   // Ver config efectiva
   @Get('config')
   config() {
-    return AnalysisConfig;
-  }
+    let resolvedMain: ResolvedModel | null = null;
+    let resolvedHuman: ResolvedModel | null = null;
+    try {
+      resolvedMain = resolveModelAbsolutePath(
+        AnalysisConfig.networksDir,
+        AnalysisConfig.networkFilename,
+      );
+    } catch {}
+    try {
+      if (AnalysisConfig.humanModelFilename) {
+        resolvedHuman = resolveModelAbsolutePath(
+          AnalysisConfig.networksDir,
+          AnalysisConfig.humanModelFilename,
+        );
+      }
+    } catch {}
 
+    return { ...AnalysisConfig, resolvedModel: resolvedMain, resolvedHumanModel: resolvedHuman };
+  }
   // Listar redes disponibles
   @Get('networks')
   networks() {
     const dir = AnalysisConfig.networksDir;
-    const files = fs
-      .readdirSync(dir)
-      .filter((f) => /\.txt\.gz$/i.test(f))
-      .map((f) => ({ filename: f, fullpath: path.join(dir, f) }));
+    const entries = fs.readdirSync(dir);
+
+    const isModel = (f: string) => /\.((bin|txt)\.gz)$/i.test(f);
+    const toMeta = (f: string) => {
+      const fullpath = path.join(dir, f);
+      const st = fs.statSync(fullpath);
+      const lower = f.toLowerCase();
+
+      // parse rápido de bXXcYYY y flags
+      const m = lower.match(/b(\d+)c(\d+)/);
+      const blocks = m ? Number(m[1]) : undefined;
+      const channels = m ? Number(m[2]) : undefined;
+      const nbt = /nbt/.test(lower);
+      const isHuman = /human/.test(lower);
+
+      const format: 'bin' | 'txt' = lower.endsWith('.bin.gz') ? 'bin' : 'txt';
+
+      // “baseName” sin extensión para que el front pueda mandar solo eso si quiere
+      const baseName = f.replace(/\.((bin|txt)\.gz)$/i, '');
+
+      return {
+        filename: f,
+        baseName,
+        fullpath,
+        format, // 'bin' | 'txt'
+        sizeBytes: st.size,
+        mtimeMs: st.mtimeMs,
+        blocks,
+        channels,
+        nbt,
+        isHuman,
+      };
+    };
+
+    const files = entries.filter(isModel).map(toMeta);
+
     return { dir, files };
   }
 
@@ -57,17 +107,58 @@ export class EngineController {
     body: {
       preset?: DifficultyPreset;
       hardware?: HardwareProfile;
-      networkFilename?: string;
+      networkFilename?: string; // main (baseName o filename)
+      humanModelFilename?: string; // humano (baseName o filename)
+      humanSLProfile?: string; // ej: rank_10k, rank_3d, proyear_2016
     },
   ) {
     if (body.preset) AnalysisConfig.preset = body.preset;
     if (body.hardware) AnalysisConfig.hardware = body.hardware;
-    if (body.networkFilename) AnalysisConfig.networkFilename = body.networkFilename;
+
+    if (body.networkFilename) {
+      resolveModelAbsolutePath(AnalysisConfig.networksDir, body.networkFilename); // valida
+      AnalysisConfig.networkFilename = body.networkFilename;
+    }
+
+    if (typeof body.humanModelFilename === 'string') {
+      // vacío => desactivar humano
+      if (body.humanModelFilename.trim() === '') {
+        AnalysisConfig.humanModelFilename = undefined as any;
+      } else {
+        resolveModelAbsolutePath(AnalysisConfig.networksDir, body.humanModelFilename); // valida
+        AnalysisConfig.humanModelFilename = body.humanModelFilename;
+      }
+    }
+
+    if (body.humanSLProfile) {
+      AnalysisConfig.humanSLProfile = body.humanSLProfile;
+    }
+
     this.kg.applyConfigAndRestart();
     this.kg.resetSession();
-    return { status: 'ok', applied: AnalysisConfig };
-  }
 
+    const resolvedMain = resolveModelAbsolutePath(
+      AnalysisConfig.networksDir,
+      AnalysisConfig.networkFilename,
+    );
+
+    let resolvedHuman: ResolvedModel | null = null;
+    try {
+      if (AnalysisConfig.humanModelFilename) {
+        resolvedHuman = resolveModelAbsolutePath(
+          AnalysisConfig.networksDir,
+          AnalysisConfig.humanModelFilename,
+        );
+      }
+    } catch {}
+
+    return {
+      status: 'ok',
+      applied: AnalysisConfig,
+      resolvedModel: resolvedMain,
+      resolvedHumanModel: resolvedHuman,
+    };
+  }
   // Overrides (maxVisits, temperatura, threads, etc.)
   @Post('config/override')
   override(@Body() body: RuntimeOverrides) {

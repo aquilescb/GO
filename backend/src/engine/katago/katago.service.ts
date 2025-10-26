@@ -2,7 +2,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as readline from 'readline';
-import { writeAnalysisCfg, modelAbsolutePath } from './runtime-config';
+import { writeAnalysisCfg, resolveModelAbsolutePath } from './runtime-config';
 import { AnalysisConfig } from '../katago/engine.analysis.config';
 import type {
   Color,
@@ -53,7 +53,11 @@ export class KatagoService implements OnModuleDestroy {
   private readonly log = new Logger(KatagoService.name);
   private proc?: ChildProcessWithoutNullStreams;
   private rl?: readline.Interface;
-  private pending = new Map<string, (v: any) => void>();
+  private pending = new Map<
+    string,
+    { resolve: (v: any) => void; reject: (e: any) => void; last?: any }
+  >();
+
   private seq = 0;
 
   private session: SessionData = { moves: [], nextColor: 'b' };
@@ -66,33 +70,90 @@ export class KatagoService implements OnModuleDestroy {
 
   ensureRunning(): void {
     if (this.proc) return;
-    const args = [
-      'analysis',
-      '-config',
-      AnalysisConfig.generatedCfgPath,
-      '-model',
-      modelAbsolutePath(AnalysisConfig),
-    ];
-    this.log.log(`Launching KataGo: ${AnalysisConfig.katagoExePath} ${args.join(' ')}`);
+
+    // Modelo principal (fuerte)
+    const main = resolveModelAbsolutePath(
+      AnalysisConfig.networksDir,
+      AnalysisConfig.networkFilename,
+    );
+
+    // Humano (opcional). Si no está seteado o no existe, no se usa.
+    let human: { path: string; format: 'bin' | 'txt' } | null = null;
+    if (AnalysisConfig.humanModelFilename) {
+      try {
+        human = resolveModelAbsolutePath(
+          AnalysisConfig.networksDir,
+          AnalysisConfig.humanModelFilename,
+        );
+      } catch {
+        human = null;
+      }
+    }
+
+    const args = ['analysis', '-config', AnalysisConfig.generatedCfgPath, '-model', main.path];
+
+    if (human) {
+      args.push('-human-model', human.path);
+    }
+
+    this.log.log(
+      `Launching KataGo: ${AnalysisConfig.katagoExePath}\n` +
+        `  -model: ${main.path} (fmt=${main.format.toUpperCase()})\n` +
+        (human ? `  -human-model: ${human.path} (fmt=${human.format.toUpperCase()})\n` : '') +
+        `  -config: ${AnalysisConfig.generatedCfgPath}`,
+    );
+
     this.proc = spawn(AnalysisConfig.katagoExePath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     this.proc.stderr.on('data', (d) => this.log.warn(`[katago][stderr] ${d.toString()}`));
     this.proc.on('exit', (code) => this.log.error(`KataGo exited with code ${code}`));
     this.rl = readline.createInterface({ input: this.proc.stdout });
     this.rl.on('line', (line) => this.onLine(line));
   }
-
   private onLine(line: string) {
-    if (!line.trim()) return;
+    const s = line?.trim();
+    if (!s) return;
+
+    // KataGo a veces imprime texto que no es JSON; lo ignoramos.
+    if (s[0] !== '{' && s[s.length - 1] !== '}') {
+      this.log.debug(`[katago][nonjson] ${s}`);
+      return;
+    }
+
+    let msg: any;
     try {
-      const msg = JSON.parse(line);
-      const id = msg.id as string | undefined;
-      const ok = id && this.pending.get(id);
-      if (ok) {
-        this.pending.delete(id);
-        ok(msg);
-      }
+      msg = JSON.parse(s);
     } catch {
-      /* ignore non-json */
+      // Si parece JSON pero no parsea, lo ignoramos sin romper el proceso.
+      this.log.warn(`[katago][badjson] ${s.slice(0, 200)}`);
+      return;
+    }
+
+    const id = msg?.id as string | undefined;
+    if (!id) return;
+
+    const pend = this.pending.get(id);
+    if (!pend) return;
+
+    // Si vino un error explícito desde el engine, rechazamos.
+    if (msg.error) {
+      this.pending.delete(id);
+      pend.reject(new Error(typeof msg.error === 'string' ? msg.error : 'ENGINE_ERROR'));
+      return;
+    }
+
+    // El analysis stream emite múltiples updates con el mismo id.
+    // Guardamos la última y RESOLVEMOS SOLO cuando termina la búsqueda.
+    // Heurística: si trae isDuringSearch === false o no existe la flag pero ya hay root/rootInfo.
+    const isFinal =
+      msg.isDuringSearch === false ||
+      (msg.isDuringSearch === undefined && (msg.rootInfo || msg.root || msg.moveInfos));
+
+    if (isFinal) {
+      this.pending.delete(id);
+      pend.resolve(msg);
+    } else {
+      // acumulamos por si quisieras usar updates intermedios
+      pend.last = msg;
     }
   }
 
@@ -105,10 +166,18 @@ export class KatagoService implements OnModuleDestroy {
         this.pending.delete(id);
         reject(new Error('ENGINE_TIMEOUT'));
       }, timeoutMs);
-      this.pending.set(id, (v) => {
-        clearTimeout(to);
-        resolve(v as T);
+
+      this.pending.set(id, {
+        resolve: (v) => {
+          clearTimeout(to);
+          resolve(v as T);
+        },
+        reject: (e) => {
+          clearTimeout(to);
+          reject(e);
+        },
       });
+
       this.proc!.stdin.write(JSON.stringify(full) + '\n', (err) => {
         if (err) {
           clearTimeout(to);
